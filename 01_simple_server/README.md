@@ -32,4 +32,8 @@ dotnet run <SERVER_IP_ADDRESS> <YOUR MESSAGE>
 
 
 ## SGDK Client
+There are a number of different ways to build SGDK. I will not cover that here.
+To use the client, you **_MUST_** change the IP addresses in `sega_client/src/main.c` 
+to match yours.
+
 
