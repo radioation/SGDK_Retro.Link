@@ -29,10 +29,27 @@ int main(bool hard) {
     // setup background
     int ind = TILE_USER_INDEX;
     VDP_drawImageEx(BG_B, &board_img, TILE_ATTR_FULL(PAL0, FALSE, FALSE, FALSE, ind), 0, 0, FALSE, TRUE);
-    ind += board_img.tileset->numTile;
-    //VDP_drawImageEx(BG_A, &fg, TILE_ATTR_FULL(PAL1, FALSE, FALSE, FALSE, ind), 0, 0, FALSE, TRUE);
-    //ind += fg.tileset->numTile;
-
+    ind += board_img.tileset->numTile; // get offset of tiles
+    // now load pieces tileset
+    VDP_loadTileSet(pieces_img.tileset, ind, CPU);
+    // we can place with setTileMapEx
+    VDP_setTileMapEx( BG_A, pieces_img.tilemap, TILE_ATTR_FULL(PAL1, TRUE, FALSE, FALSE, ind),    
+        8,  // PLANE X Dest
+        2,  // PLANE Y Dest in tiles
+        0,  // REGION X start
+        0,  // REGION Y start
+        3,  // Width
+        3,  // Height
+        CPU);
+    // foreground
+    VDP_setTileMapEx( BG_A, pieces_img.tilemap, TILE_ATTR_FULL(PAL1, TRUE, FALSE, FALSE, ind),    
+        11, // PLANE X Dest
+        5,  // PLANE Y Dest in tiles
+        3,  // REGION X start
+        3,  // REGION Y start
+        3,  // Width
+        3,  // Height
+        CPU);
     // foreground
 
 
@@ -43,7 +60,7 @@ int main(bool hard) {
     cursor.pos_y = 16;
     cursor.step_x = 24;
     cursor.step_y = 24;
-    cursor.sprite = SPR_addSprite( &cursor_spr, cursor.pos_x, cursor.pos_y, TILE_ATTR(PAL0, 0, FALSE, FALSE ));
+    cursor.sprite = SPR_addSprite( &cursor_spr, cursor.pos_x, cursor.pos_y, TILE_ATTR(PAL0, FALSE, FALSE, FALSE ));
 
     //////////////////////////////////////////////////////////////
     // main loop.
