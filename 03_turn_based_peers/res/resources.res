@@ -5,5 +5,6 @@ IMAGE pieces_img "bg/pieces.png" BEST
 
 PALETTE board_pal "bg/board.png"
 PALETTE pieces_pal "bg/pieces.png"
+PALETTE cursor_pal "sprites/cursor.png"
 
 

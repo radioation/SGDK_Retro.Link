@@ -7,13 +7,13 @@
 // Chess Piece data
 // Enum to represent piece types
 typedef enum {
-    KING = 0, 
-    QUEEN = 3, 
-    ROOK = 6, 
-    BISHOP = 9, 
-    KNIGHT = 12, 
-    PAWN = 15, 
-    EMPTY = 18
+    EMPTY = 0,
+    KING = 3, 
+    QUEEN = 6, 
+    ROOK = 9, 
+    BISHOP = 12, 
+    KNIGHT = 15, 
+    PAWN = 18 
 } PIECE_TYPE;
 
 typedef enum {
@@ -36,12 +36,7 @@ const u8 boardStep = 3;
 
 void setup_pieces() {
     // clear the board
-    CHESS_PIECE empty = {EMPTY, 0};
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 8; j++) {
-            board[i][j] = empty;
-        }
-    }
+    memset(board, 0, sizeof(CHESS_PIECE) * 8 * 8); // Set all to empty
 
     // set  pieces up
     board[0][7] = (CHESS_PIECE){ROOK, PLAYER_ONE};   board[7][7] = (CHESS_PIECE){ROOK, PLAYER_ONE};
@@ -113,13 +108,16 @@ typedef struct
     s16 pos_y;
     s16 sel_col; // selected piece column
     s16 sel_row; // selected piece row
+    s16 sel_pos_x;
+    s16 sel_pos_y;
+    Sprite *selected_spr;
 } CURSOR;
 
 const u8 cursorStep = 24;
 const u8 cursorColStart = 64;
 const u8 cursorRowStart = 16;
 
-void cursor_init( CURSOR *cursor, Sprite *sprite ) {
+void cursor_init( CURSOR *cursor, Sprite *sprite, Sprite *selected_sprite ) {
     cursor->col = 4;
     cursor->row = 4;
     cursor->pos_x = cursor->col * cursorStep + cursorColStart;
@@ -127,6 +125,11 @@ void cursor_init( CURSOR *cursor, Sprite *sprite ) {
     cursor->sprite =  sprite;
     cursor->sel_col = -1;
     cursor->sel_row = -1;
+    cursor->sel_pos_x = -32;
+    cursor->sel_pos_y = -32;
+    cursor->selected_spr = selected_sprite;
+    SPR_setAnim( cursor->selected_spr, 1 );
+    SPR_setVisibility( cursor->selected_spr, HIDDEN );
 }
 
 bool cursor_move( CURSOR *cursor, u16 joypad ) {
@@ -157,6 +160,9 @@ bool cursor_move( CURSOR *cursor, u16 joypad ) {
 void cursor_clear( CURSOR* cursor ) {
     cursor->sel_col = -1;
     cursor->sel_row = -1;
+    cursor->sel_pos_x = -32;
+    cursor->sel_pos_y = -32;
+    SPR_setVisibility( cursor->selected_spr, HIDDEN );
     char message[40];
     strclr(message);
     sprintf( message, "X: %d y: %d sx: %d sy %d    ", cursor->col, cursor->row, cursor->sel_col, cursor->sel_row);
@@ -177,6 +183,9 @@ void cursor_action( CURSOR* cursor, CHESS_PIECE brd[8][8] ) {
         if( brd[cursor->col][cursor->row].player > 0 ) { // move anything player for now
             cursor->sel_col = cursor->col;
             cursor->sel_row = cursor->row;
+            cursor->sel_pos_x = cursor->sel_col * cursorStep + cursorColStart;
+            cursor->sel_pos_y = cursor->sel_row * cursorStep + cursorRowStart;
+            SPR_setVisibility( cursor->selected_spr, VISIBLE );
         }
     } else {
         // piece is selected, check if we can move to new space.
@@ -203,6 +212,7 @@ int main(bool hard) {
 
     PAL_setPalette( PAL0, board_pal.data, CPU );
     PAL_setPalette( PAL1, pieces_pal.data, CPU );
+    PAL_setPalette( PAL2, cursor_pal.data, CPU );
 
     //////////////////////////////////////////////////////////////
     // setup background
@@ -219,7 +229,9 @@ int main(bool hard) {
     // sprites 
     SPR_init();
     CURSOR cursor;
-    cursor_init(&cursor, SPR_addSprite( &cursor_spr, cursor.pos_x, cursor.pos_y, TILE_ATTR(PAL0, FALSE, FALSE, FALSE )) );
+    cursor_init(&cursor, 
+            SPR_addSprite( &cursor_spr, cursor.pos_x, cursor.pos_y, TILE_ATTR(PAL2, FALSE, FALSE, FALSE )),
+            SPR_addSprite( &cursor_spr, cursor.pos_x, cursor.pos_y, TILE_ATTR(PAL2, FALSE, FALSE, FALSE )) );
 
 
 
@@ -252,6 +264,7 @@ int main(bool hard) {
         //////////////////////////////////////////////////////////////
         // update sprites
         SPR_setPosition( cursor.sprite, cursor.pos_x, cursor.pos_y );
+        SPR_setPosition( cursor.selected_spr, cursor.sel_pos_x, cursor.sel_pos_y );
         SPR_update();
 
         //////////////////////////////////////////////////////////////
