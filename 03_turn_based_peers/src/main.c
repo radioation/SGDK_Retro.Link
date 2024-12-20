@@ -1,8 +1,10 @@
 #include <genesis.h>
 #include "resources.h"
+#include "network.h" 
 
 #define INPUT_WAIT_COUNT 10
 
+int text_cursor_x, text_cursor_y;
 
 // Chess Piece data
 // Enum to represent piece types
@@ -203,19 +205,120 @@ void cursor_action( CURSOR* cursor, CHESS_PIECE brd[8][8] ) {
 }
 
 
+void host_game() {
+    // Allow client to join
+    NET_allowConnections();
+    VDP_drawText("           Waiting       ", 0, 5);
+
+    // loop while waiting for a peer.
+    u8 offset = 0;
+    while( 1 ) {
+        // Data available?
+        while( !NET_RXReady() ){
+            // writing some sort of text here?
+            VDP_drawText(" .     ", 21+offset, 5);
+            offset +=1;
+            if( offset > 3 ) offset = 0;
+            waitMs(20);
+
+        }
+        // look for 'C'
+        u8 ret = NET_readByte();
+        if( ret == 'C' ) {
+            // clear text before losing out
+            VDP_drawText("          Connected!     ", 0, 5);
+            return;
+        }
+    }
+
+}
+
+
+
 int main(bool hard) {
 
     //////////////////////////////////////////////////////////////
     // setup screen and palettes
-    VDP_setBackgroundColor(16);
+    SYS_disableInts();
     VDP_setScreenWidth320();
+    VDP_setScreenHeight224();
+    VDP_setBackgroundColor(16);
+    SYS_enableInts();                      // enable interrupts for networking print routines.
 
+
+    //////////////////////////////////////////////////////////////
+    // Networking setup
+    text_cursor_x = 0; // networking text cursor location
+    text_cursor_y = 0; // networking text cursor location
+
+    VDP_drawText("Detecting adapter...[  ]", text_cursor_x, text_cursor_y); text_cursor_x+=21;   
+    NET_initialize(); // Detect cartridge and set boolean variable
+
+    if(cart_present)
+    {
+        VDP_setTextPalette(2); // Green text
+        VDP_drawText("Ok", text_cursor_x, text_cursor_y); text_cursor_x=0; text_cursor_y+=2;
+        VDP_setTextPalette(0); // White text
+    }
+    else
+    {
+        VDP_setTextPalette(1); // Red text
+        VDP_drawText("XX", text_cursor_x, text_cursor_y); text_cursor_x=0; text_cursor_y+=2;
+        VDP_setTextPalette(0); // White text
+        VDP_drawText("Adapter not present", text_cursor_x, text_cursor_y);
+        while(1) { SYS_doVBlankProcess(); }
+    }
+
+
+    VDP_drawText("IP Address:", text_cursor_x, text_cursor_y);
+    NET_printIP(text_cursor_x+12, text_cursor_y); text_cursor_y++;
+
+    VDP_drawText("MAC:", text_cursor_x, text_cursor_y);
+    NET_printMAC(text_cursor_x+5, text_cursor_y); text_cursor_y+=2;
+
+
+    NET_resetAdapter();
+    VDP_drawText("          (A) - Host Game", 0, 5);
+    VDP_drawText("          (C) - Join Game", 0, 7);
+
+    u8 mode = 0; // 0 - not set, 1 - PLAYER_ONE, 2 - PLAYER_TWO
+
+    //////////////////////////////////////////////////////////////
+    // Networking Loop  
+    u8 buttons_prev;
+    while(1) 
+    {
+        u8 buttons = JOY_readJoypad(JOY_1);
+        // MODE NOT SET, button press will determine server or client.
+        if(buttons & BUTTON_A && buttons_prev == 0x00) {
+            VDP_drawText("                         ", 0, 5);
+            VDP_drawText("                         ", 0, 7);
+            text_cursor_y = 5;
+            mode = PLAYER_ONE;
+            // start listening
+            host_game();
+            break;
+
+        }else if(buttons & BUTTON_C && buttons_prev == 0x00) {
+            VDP_drawText("                         ", 0, 5);
+            VDP_drawText("                         ", 0, 7);
+            // try to connect to server.
+            mode = PLAYER_TWO;
+            text_cursor_y = 5;
+            NET_connect(text_cursor_x, text_cursor_y, "010.086.022.036:5364"); text_cursor_x=0; text_cursor_y++;
+            break;
+        }
+        buttons_prev = buttons;
+        SYS_doVBlankProcess();
+    }
+
+
+    //////////////////////////////////////////////////////////////
+    // setup background
     PAL_setPalette( PAL0, board_pal.data, CPU );
     PAL_setPalette( PAL1, pieces_pal.data, CPU );
     PAL_setPalette( PAL2, cursor_pal.data, CPU );
 
-    //////////////////////////////////////////////////////////////
-    // setup background
     int ind = TILE_USER_INDEX;
     VDP_drawImageEx(BG_B, &board_img, TILE_ATTR_FULL(PAL0, FALSE, FALSE, FALSE, ind), 0, 0, FALSE, TRUE);
     ind += board_img.tileset->numTile; // get offset of tiles
@@ -232,7 +335,6 @@ int main(bool hard) {
     cursor_init(&cursor, 
             SPR_addSprite( &cursor_spr, cursor.pos_x, cursor.pos_y, TILE_ATTR(PAL2, FALSE, FALSE, FALSE )),
             SPR_addSprite( &cursor_spr, cursor.pos_x, cursor.pos_y, TILE_ATTR(PAL2, FALSE, FALSE, FALSE )) );
-
 
 
     //////////////////////////////////////////////////////////////
