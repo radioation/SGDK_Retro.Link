@@ -170,9 +170,14 @@ void cursor_update_from_pos( CURSOR *cursor, s8 col, s8 row, s8 sel_col, s8 sel_
     cursor->sel_pos_x = cursor->sel_col * cursorStep + cursorColStart;
     cursor->sel_row = sel_row;
     cursor->sel_pos_y = cursor->sel_row * cursorStep + cursorRowStart;
+    if( cursor->sel_col >= 0 ) {
+        SPR_setVisibility( cursor->selected_spr, VISIBLE );
+    } else {
+        SPR_setVisibility( cursor->selected_spr, HIDDEN );
+    }
 }
 
-void cursor_clear( CURSOR* cursor ) {
+void cursor_clear_selected( CURSOR* cursor ) {
     cursor->sel_col = -1;
     cursor->sel_row = -1;
     cursor->sel_pos_x = -32;
@@ -205,16 +210,12 @@ bool cursor_action( CURSOR* cursor, CHESS_PIECE brd[8][8], u8 player ) {
         //TODO -- (add valid move check, for now just look for empty squares)
         if( brd[(u8)cursor->col][(u8)cursor->row].type == EMPTY ) { 
             move_piece( cursor->sel_col, cursor->sel_row, cursor->col, cursor->row );
-            cursor_clear(cursor); 
             return true;
         }
     }
     return false;
 }
 
-void cursor_transmit( CURSOR* cursor ) {
-    // send it out
-}
 
 void host_game() {
     // Allow client to join
@@ -246,26 +247,19 @@ void host_game() {
 
 
 
-void send_bytes_n(u8* data, u8 length ) {
-  for( u8 i=0; i < length; ++i ) {
-    NET_sendByte( data[i]); 
-  }
-}
-
-void cursor_send_data( CURSOR* cursor  ) {
-  NET_sendByte( 128 ); // first bit is always on, and 4 bytesl
+void cursor_send_data( CURSOR* cursor, u8 type  ) {
+  NET_sendByte( 128 + type ); // first bit is always on, and 4 bytesl
   NET_sendByte( 4 ); // cursor always sends 4 bytes
   NET_sendByte( cursor->col );
   NET_sendByte( cursor->row );
   NET_sendByte( cursor->sel_col );
-  NET_sendByte( cursor->sel_col );
+  NET_sendByte( cursor->sel_row );
 }
 
 
 
 void read_bytes_n(u8* data, u8 length ) {
     s16 bytePos = 0;
-
     while( bytePos < length ) {
         // read data
         if( NET_RXReady() ) {
@@ -386,26 +380,40 @@ int main(bool hard) {
     // main loop.
     u8 inputWait = 0;
     u8 currentPlayer = PLAYER_ONE;
+    VDP_drawText("PLAYER ONE MOVE", 13, 1);
     while(TRUE)
     {
-        if(  currentPlayer == me ) {
+        if( currentPlayer == me ) {
             // read joypad to mover cursor
             u16 joypad  = JOY_readJoypad( JOY_1 );
             if( inputWait == 0 ) {
                 if( cursor_move( &cursor, joypad ) == TRUE ) {
                     inputWait = INPUT_WAIT_COUNT;
                     // send cursor data
-                    cursor_send_data( &cursor );
+                    cursor_send_data( &cursor, 0 );
                 }
                 if( joypad & BUTTON_A ) {
-                    cursor_action( &cursor, board, me );
+                    bool didMove =  cursor_action( &cursor, board, me );
                     inputWait = INPUT_WAIT_COUNT;
-                    // send move data.
+                    if( didMove ) {
+                        // send move data.
+                        cursor_send_data( &cursor, 1 );  // move piece
+                        cursor_clear_selected(&cursor); 
+                        if( currentPlayer == PLAYER_ONE ) {
+                            currentPlayer = PLAYER_TWO;
+                            VDP_drawText("TWO", 20, 1);
+                        } else {
+                            currentPlayer = PLAYER_ONE;
+                            VDP_drawText("ONE", 20, 1);
+                        }
+                    } else {
+                        cursor_send_data( &cursor, 0 ); // just update cursor
+                    }
                 } else if( joypad & BUTTON_C ) {
-                    cursor_clear( &cursor );
+                    cursor_clear_selected( &cursor );
                     inputWait = INPUT_WAIT_COUNT;
                     // send cursor data
-                    cursor_send_data( &cursor );
+                    cursor_send_data( &cursor,0 );
                 }
             } else {
                 if( inputWait > 0 ) {
@@ -413,7 +421,7 @@ int main(bool hard) {
                 }
             }
         } else {
-            // not me, listen for data
+            // current player is not me, listen for data
 
             // check if readable
             if( NET_RXReady() ) {
@@ -430,7 +438,16 @@ int main(bool hard) {
                     cursor_update_from_pos( &cursor, (s8)buffer[0], (s8)buffer[1], (s8)buffer[2], (s8)buffer[3] );
                 }else if( data_type == 129 ) {
                     // board update
-
+                    cursor_update_from_pos( &cursor, (s8)buffer[0], (s8)buffer[1], (s8)buffer[2], (s8)buffer[3] );
+                    move_piece( (s8)buffer[2], (s8)buffer[3], (s8)buffer[0], (s8)buffer[1] );
+                    cursor_clear_selected(&cursor); 
+                    if( currentPlayer == PLAYER_ONE ) {
+                        currentPlayer = PLAYER_TWO;
+                        VDP_drawText("TWO", 20, 1);
+                    } else {
+                        currentPlayer = PLAYER_ONE;
+                        VDP_drawText("ONE", 20, 1);
+                    }
                 } 
             } 
         }
