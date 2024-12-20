@@ -32,9 +32,9 @@ typedef struct {
 
 CHESS_PIECE board[8][8]; // X, Y
 int piecesTileIndex = -1;
-const u8 boardStartCol = 8;
-const u8 boardStartRow = 2;
-const u8 boardStep = 3;
+const s8 boardStartCol = 8;
+const s8 boardStartRow = 2;
+const s8 boardStep = 3;
 
 void setup_pieces() {
     // clear the board
@@ -62,7 +62,7 @@ void draw_pieces(){
     for (int row = 0; row < 8; row++) {
         for (int col = 0; col < 8; col++) {
             if( board[col][row].player > 0 ) {
-                u8 yStart = 0;
+                s8 yStart = 0;
                 if( board[col][row].player == 2 ) {
                     yStart = 3;
                 }
@@ -104,28 +104,29 @@ void move_piece( int startCol, int startRow, int endCol, int endRow ){
 typedef struct 
 {
     Sprite *sprite;
-    s16 col;
-    s16 row;
-    s16 pos_x;
+    s8 col;     // board col
+    s8 row;     // board row
+    s16 pos_x;  
     s16 pos_y;
-    s16 sel_col; // selected piece column
-    s16 sel_row; // selected piece row
+    s8 sel_col; // selected board column
+    s8 sel_row; // selected board row
     s16 sel_pos_x;
     s16 sel_pos_y;
     Sprite *selected_spr;
 } CURSOR;
 
-const u8 cursorStep = 24;
-const u8 cursorColStart = 64;
-const u8 cursorRowStart = 16;
+const s8 cursorStep = 24;
+const s8 cursorColStart = 64;
+const s8 cursorRowStart = 16;
 
 void cursor_init( CURSOR *cursor, Sprite *sprite, Sprite *selected_sprite ) {
-    cursor->col = 4;
+    cursor->col = 4;  // board position
     cursor->row = 4;
     cursor->pos_x = cursor->col * cursorStep + cursorColStart;
     cursor->pos_y = cursor->row * cursorStep + cursorRowStart;
     cursor->sprite =  sprite;
-    cursor->sel_col = -1;
+
+    cursor->sel_col = -1;  // not on board
     cursor->sel_row = -1;
     cursor->sel_pos_x = -32;
     cursor->sel_pos_y = -32;
@@ -159,6 +160,18 @@ bool cursor_move( CURSOR *cursor, u16 joypad ) {
     return didMove;
 }
 
+void cursor_update_from_pos( CURSOR *cursor, s8 col, s8 row, s8 sel_col, s8 sel_row ) {
+    cursor->col = col;
+    cursor->pos_x = cursor->col * cursorStep + cursorColStart;
+    cursor->row = row;
+    cursor->pos_y = cursor->row * cursorStep + cursorRowStart;
+
+    cursor->sel_col = sel_col;
+    cursor->sel_pos_x = cursor->sel_col * cursorStep + cursorColStart;
+    cursor->sel_row = sel_row;
+    cursor->sel_pos_y = cursor->sel_row * cursorStep + cursorRowStart;
+}
+
 void cursor_clear( CURSOR* cursor ) {
     cursor->sel_col = -1;
     cursor->sel_row = -1;
@@ -172,17 +185,15 @@ void cursor_clear( CURSOR* cursor ) {
     VDP_drawText("CLEARED", 0, 1);
 }
 
-void cursor_action( CURSOR* cursor, CHESS_PIECE brd[8][8] ) {
+bool cursor_action( CURSOR* cursor, CHESS_PIECE brd[8][8], u8 player ) {
     char message[40];
     strclr(message);
     sprintf( message, "X: %d y: %d sx: %d sy %d    ", cursor->col, cursor->row, cursor->sel_col, cursor->sel_row);
     VDP_drawText(message, 0, 0);
 
     if( cursor->sel_col < 0 ) {
-        // no piece selected yet, check if valid piece in board
-        // ( valid means current player owns the piece)
-        // TODO --
-        if( brd[cursor->col][cursor->row].player > 0 ) { // move anything player for now
+        // no piece selected yet, check if player owns the current piece.
+        if( brd[(u8)cursor->col][(u8)cursor->row].player == player ) { 
             cursor->sel_col = cursor->col;
             cursor->sel_row = cursor->row;
             cursor->sel_pos_x = cursor->sel_col * cursorStep + cursorColStart;
@@ -190,20 +201,20 @@ void cursor_action( CURSOR* cursor, CHESS_PIECE brd[8][8] ) {
             SPR_setVisibility( cursor->selected_spr, VISIBLE );
         }
     } else {
-        // piece is selected, check if we can move to new space.
-        //TODO --
-
-        // move to new spac
-        if( brd[cursor->col][cursor->row].type == EMPTY ) { 
-            // just check for empty for now
-            // clear old player
-            VDP_drawText("DO MOVE", 0, 1);
+        // A piece is selected, check if cursor position is valid )
+        //TODO -- (add valid move check, for now just look for empty squares)
+        if( brd[(u8)cursor->col][(u8)cursor->row].type == EMPTY ) { 
             move_piece( cursor->sel_col, cursor->sel_row, cursor->col, cursor->row );
             cursor_clear(cursor); 
+            return true;
         }
     }
+    return false;
 }
 
+void cursor_transmit( CURSOR* cursor ) {
+    // send it out
+}
 
 void host_game() {
     // Allow client to join
@@ -232,6 +243,40 @@ void host_game() {
     }
 
 }
+
+
+
+void send_bytes_n(u8* data, u8 length ) {
+  for( u8 i=0; i < length; ++i ) {
+    NET_sendByte( data[i]); 
+  }
+}
+
+void cursor_send_data( CURSOR* cursor  ) {
+  NET_sendByte( 128 ); // first bit is always on, and 4 bytesl
+  NET_sendByte( 4 ); // cursor always sends 4 bytes
+  NET_sendByte( cursor->col );
+  NET_sendByte( cursor->row );
+  NET_sendByte( cursor->sel_col );
+  NET_sendByte( cursor->sel_col );
+}
+
+
+
+void read_bytes_n(u8* data, u8 length ) {
+    s16 bytePos = 0;
+
+    while( bytePos < length ) {
+        // read data
+        if( NET_RXReady() ) {
+            data[bytePos] = NET_readByte(); // Retrieve byte from RX hardware Fifo directly
+            bytePos++;
+        } else {
+            waitMs(5);
+        }
+    }
+}
+
 
 
 
@@ -281,7 +326,7 @@ int main(bool hard) {
     VDP_drawText("          (A) - Host Game", 0, 5);
     VDP_drawText("          (C) - Join Game", 0, 7);
 
-    u8 mode = 0; // 0 - not set, 1 - PLAYER_ONE, 2 - PLAYER_TWO
+    u8 me = 0; // 0 - not set, 1 - PLAYER_ONE, 2 - PLAYER_TWO
 
     //////////////////////////////////////////////////////////////
     // Networking Loop  
@@ -294,7 +339,7 @@ int main(bool hard) {
             VDP_drawText("                         ", 0, 5);
             VDP_drawText("                         ", 0, 7);
             text_cursor_y = 5;
-            mode = PLAYER_ONE;
+            me = PLAYER_ONE;
             // start listening
             host_game();
             break;
@@ -303,7 +348,7 @@ int main(bool hard) {
             VDP_drawText("                         ", 0, 5);
             VDP_drawText("                         ", 0, 7);
             // try to connect to server.
-            mode = PLAYER_TWO;
+            me = PLAYER_TWO;
             text_cursor_y = 5;
             NET_connect(text_cursor_x, text_cursor_y, "010.086.022.036:5364"); text_cursor_x=0; text_cursor_y++;
             break;
@@ -340,27 +385,54 @@ int main(bool hard) {
     //////////////////////////////////////////////////////////////
     // main loop.
     u8 inputWait = 0;
+    u8 currentPlayer = PLAYER_ONE;
     while(TRUE)
     {
-        // read joypad to mover cursor
-        u16 joypad  = JOY_readJoypad( JOY_1 );
-        if( inputWait == 0 ) {
-            if( cursor_move( &cursor, joypad ) == TRUE ) {
-                inputWait = INPUT_WAIT_COUNT;
-            }
-
-
-            if( joypad & BUTTON_A ) {
-                cursor_action( &cursor, board );
-                inputWait = INPUT_WAIT_COUNT;
-            } else if( joypad & BUTTON_C ) {
-                cursor_clear( &cursor );
-                inputWait = INPUT_WAIT_COUNT;
+        if(  currentPlayer == me ) {
+            // read joypad to mover cursor
+            u16 joypad  = JOY_readJoypad( JOY_1 );
+            if( inputWait == 0 ) {
+                if( cursor_move( &cursor, joypad ) == TRUE ) {
+                    inputWait = INPUT_WAIT_COUNT;
+                    // send cursor data
+                    cursor_send_data( &cursor );
+                }
+                if( joypad & BUTTON_A ) {
+                    cursor_action( &cursor, board, me );
+                    inputWait = INPUT_WAIT_COUNT;
+                    // send move data.
+                } else if( joypad & BUTTON_C ) {
+                    cursor_clear( &cursor );
+                    inputWait = INPUT_WAIT_COUNT;
+                    // send cursor data
+                    cursor_send_data( &cursor );
+                }
+            } else {
+                if( inputWait > 0 ) {
+                    --inputWait;
+                }
             }
         } else {
-            if( inputWait > 0 ) {
-                --inputWait;
-            }
+            // not me, listen for data
+
+            // check if readable
+            if( NET_RXReady() ) {
+                // read the header
+                u8 header[2];
+                read_bytes_n( header, 2 );
+                u8 data_type = header[0];
+                u8 data_length = header[1];
+                // read the data
+                u8 buffer[16]; 
+                read_bytes_n( buffer, data_length );
+                if( data_type == 128 ) {
+                    // cursor update
+                    cursor_update_from_pos( &cursor, (s8)buffer[0], (s8)buffer[1], (s8)buffer[2], (s8)buffer[3] );
+                }else if( data_type == 129 ) {
+                    // board update
+
+                } 
+            } 
         }
 
         //////////////////////////////////////////////////////////////
