@@ -344,13 +344,15 @@ int main(bool hard) {
             // try to connect to server.
             me = PLAYER_TWO;
             text_cursor_y = 5;
-            NET_connect(text_cursor_x, text_cursor_y, "010.086.022.036:5364"); text_cursor_x=0; text_cursor_y++;
+            NET_connect(text_cursor_x, text_cursor_y, "010.086.022.026:5364"); text_cursor_x=0; text_cursor_y++;
             break;
         }
         buttons_prev = buttons;
         SYS_doVBlankProcess();
     }
-
+    NET_flushBuffers();
+    VDP_clearPlane( BG_A, TRUE);
+    VDP_clearPlane( BG_B, TRUE);
 
     //////////////////////////////////////////////////////////////
     // setup background
@@ -380,6 +382,8 @@ int main(bool hard) {
     // main loop.
     u8 inputWait = 0;
     u8 currentPlayer = PLAYER_ONE;
+
+    VDP_setTextPlane( BG_A );
     VDP_drawText("PLAYER ONE MOVE", 13, 1);
     while(TRUE)
     {
@@ -424,19 +428,32 @@ int main(bool hard) {
             // current player is not me, listen for data
 
             // check if readable
+    VDP_drawText("L 0 ", 0, 0 );
             if( NET_RXReady() ) {
+    VDP_drawText("L 1 ", 0, 1 );
                 // read the header
                 u8 header[2];
+
                 read_bytes_n( header, 2 );
+    VDP_drawText("L 2 ", 0, 2 );
                 u8 data_type = header[0];
+    char message[40];
+    strclr(message);
+    sprintf( message, "T: %d   ", data_type);
+    VDP_drawText(message, 0, 3);
                 u8 data_length = header[1];
+    sprintf( message, "L: %d   ", data_length);
+    VDP_drawText(message, 0, 4);
                 // read the data
                 u8 buffer[16]; 
                 read_bytes_n( buffer, data_length );
+    VDP_drawText("L 5 ", 0, 5 );
                 if( data_type == 128 ) {
+    VDP_drawText("L 6 ", 0, 6 );
                     // cursor update
                     cursor_update_from_pos( &cursor, (s8)buffer[0], (s8)buffer[1], (s8)buffer[2], (s8)buffer[3] );
                 }else if( data_type == 129 ) {
+    VDP_drawText("L 7 ", 0, 7 );
                     // board update
                     cursor_update_from_pos( &cursor, (s8)buffer[0], (s8)buffer[1], (s8)buffer[2], (s8)buffer[3] );
                     move_piece( (s8)buffer[2], (s8)buffer[3], (s8)buffer[0], (s8)buffer[1] );
@@ -449,6 +466,7 @@ int main(bool hard) {
                         VDP_drawText("ONE", 20, 1);
                     }
                 } 
+    VDP_drawText("L 8 ", 0, 8 );
             } 
         }
 
