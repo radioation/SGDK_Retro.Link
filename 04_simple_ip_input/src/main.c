@@ -1,13 +1,14 @@
 #include <genesis.h>
 #include "network.h"
 
+
+#include "ip_input.h"
+
 int cursor_x, cursor_y;
 u8 buttons, buttons_prev;
 
-char server[16] = "192.168.001.002";
+char server[16] = "192.168.001.002"; // default 
 
-void input_server_address(){
-}
 
 int main()
 {
@@ -23,6 +24,7 @@ int main()
     VDP_setBackgroundColor(51);             // Blue background
     PAL_fadeInPalette(PAL0, palette_grey, 16, FALSE);
 
+/*
     cursor_x = 8;
     cursor_y = 2;
     VDP_drawText("Detecting adapter...[  ]", cursor_x, cursor_y); cursor_x+=21; 
@@ -56,6 +58,11 @@ int main()
     waitMs(2000);
 
     NET_resetAdapter();
+*/
+
+    SPR_init();
+
+    getIPFromUser(server);
 
 
     //------------------------------------------------------------------
