@@ -28,18 +28,57 @@ int atoi(const char *str) {
 }
 
 
+const s16 pos_y = 84;
+const s16 base_x = 100;
 s16 pos_x = 100;
-s16 pos_y = 84;
 s16 x_inc = 32;
+u8 curr_octet = 0;
+u8 ip_bytes [ 4 ] = {192,168,1,2};
+Sprite * ip_cursor;
+bool doSave = false;
+bool done = false;
+
+void inputCallback( u16 joy, u16 changed, u16 state ) {
+    if(  changed & state & BUTTON_LEFT ) {
+        if( curr_octet == 0 ) {
+            curr_octet = 3;
+        }else {
+            curr_octet -= 1;
+        }
+        pos_x = base_x + x_inc * curr_octet;
+    }else if(  changed & state & BUTTON_RIGHT) {
+        curr_octet += 1;
+        if( curr_octet > 3 ) {
+            curr_octet = 0;
+        }
+        pos_x = base_x + x_inc * curr_octet;
+    }
+
+    if(  changed & state & BUTTON_UP ) {
+        // increment 
+        if( state & BUTTON_C ) {
+            ip_bytes[ curr_octet ] += 10;
+        } else {
+            ip_bytes[ curr_octet ] += 1;
+        }
+
+    } else if(  changed & state & BUTTON_DOWN ) {
+        if( state & BUTTON_C ) {
+            ip_bytes[ curr_octet ] -= 10;
+        } else {
+            ip_bytes[ curr_octet ] -= 1;
+        }
+    }
 
 
-void handleInput() {
-    u16 joypad = JOY_readJoypad( JOY_1 );
+    if(  changed & state & BUTTON_A ) {
+       doSave = true; 
+       done = true;
+    }else if(  changed & state & BUTTON_B ) {
+       done = true;
+    }
 }
 
-//void updateAddressString( char* ipaddr, u8 p1, u8 p2, u8 p3, u8 p4 ) {
-//
-//}
 
 bool getIPFromUser( char* ipaddr ) {
 
@@ -50,15 +89,11 @@ bool getIPFromUser( char* ipaddr ) {
 
     int ind = TILE_USER_INDEX;
     VDP_drawImageEx(BG_B, &background_img, TILE_ATTR_FULL(PAL0, FALSE, FALSE, FALSE, ind), 0, 0, FALSE, TRUE);
-  
-    SPR_addSprite( &ip_cursor_spr, pos_x, pos_y, TILE_ATTR(PAL1, FALSE, FALSE, FALSE ));
+
+    ip_cursor = SPR_addSprite( &ip_cursor_spr, pos_x, pos_y, TILE_ATTR(PAL1, FALSE, FALSE, FALSE ));
 
 
     // TODO: parse numbers from string if non zero
-    u8 intPart1 = 192;
-    u8 intPart2 = 169;
-    u8 intPart3 = 1;
-    u8 intPart4 = 2;
 
     char temp_server[16];
     char textPart1[4];
@@ -69,17 +104,27 @@ bool getIPFromUser( char* ipaddr ) {
     memset( textPart3, 0, sizeof(textPart3));
     char textPart4[4];
     memset( textPart4, 0, sizeof(textPart4));
-    while(true) {
+
+    JOY_setEventHandler( &inputCallback );
+
+    VDP_drawText( "Press A to save", 13, 16 );
+    VDP_drawText( "Press B to cancel", 12, 18 );
+
+    while(!done) {
         //updateAddressString( temp_server, p1, p2, p3, p4 );
-        uintToStr(intPart1, textPart1, 3 );             
-        uintToStr(intPart2, textPart2, 3 );             
-        uintToStr(intPart3, textPart3, 3 );             
-        uintToStr(intPart4, textPart4, 3 );             
+        uintToStr(ip_bytes[0], textPart1, 3 );             
+        uintToStr(ip_bytes[1], textPart2, 3 );             
+        uintToStr(ip_bytes[2], textPart3, 3 );             
+        uintToStr(ip_bytes[3], textPart4, 3 );             
         VDP_drawText( textPart1, 13, 11 );
         VDP_drawText( textPart2, 17, 11 );
         VDP_drawText( textPart3, 21, 11 );
         VDP_drawText( textPart4, 25, 11 );
-
+        if( doSave == true ) {
+            sprintf(ipaddr,"%s.%s.%s.%s", textPart1, textPart2, textPart3, textPart4 );
+            return;
+        }
+        SPR_setPosition( ip_cursor, pos_x, pos_y );
         SPR_update();    
 
         SYS_doVBlankProcess();
