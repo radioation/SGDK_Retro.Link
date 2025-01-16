@@ -7,7 +7,7 @@
 int cursor_x, cursor_y;
 u8 buttons, buttons_prev;
 
-char server[16] = "192.168.001.002"; // default 
+char server[16] = "000.000.000.000"; // default 
 
 
 int main()
@@ -60,9 +60,34 @@ int main()
     NET_resetAdapter();
 */
 
+    SRAM_enable();
+    u8 part = SRAM_readByte(0);
+    char textPart[4];
+    //memset( textPart, 0, sizeof(textPart) ):
+    sprintf( server, "%03d.", part ); 
+    part = SRAM_readByte(1);
+    sprintf( server+4, "%03d.", part ); 
+    part = SRAM_readByte(2);
+    sprintf( server+8, "%03d.", part ); 
+    part = SRAM_readByte(3);
+    sprintf( server+12, "%03d", part ); 
+
+    
     SPR_init();
 
+    VDP_drawText( server, 13 , 3 );
+
     getIPFromUser(server);
+
+    VDP_drawText( "Got Address", 13 ,12 );
+    VDP_drawText( server, 13 , 13 );
+
+
+    SRAM_writeByte(0, atoi( server ));
+    SRAM_writeByte(1, atoi( server + 4 ));
+    SRAM_writeByte(2, atoi( server + 8 ));
+    SRAM_writeByte(3, atoi( server + 12));
+    
 
 
     //------------------------------------------------------------------

@@ -19,7 +19,7 @@ int atoi(const char *str) {
             result = result * 10 + (str[i] - '0');
             i++;
         } else {
-            // Stop if a non-digit character is encountered
+            // break on first non-digit char
             break;
         }
     }
@@ -33,7 +33,7 @@ const s16 base_x = 100;
 s16 pos_x = 100;
 s16 x_inc = 32;
 u8 curr_octet = 0;
-u8 ip_bytes [ 4 ] = {192,168,1,2};
+u8 ip_bytes [ 4 ] = {0,0,0,0};
 Sprite * ip_cursor;
 bool doSave = false;
 bool done = false;
@@ -73,14 +73,19 @@ void inputCallback( u16 joy, u16 changed, u16 state ) {
 
     if(  changed & state & BUTTON_A ) {
        doSave = true; 
-       done = true;
     }else if(  changed & state & BUTTON_B ) {
        done = true;
     }
 }
 
 
-bool getIPFromUser( char* ipaddr ) {
+void getIPFromUser( char* ipaddr ) {
+    //////////////////////////////////////////////////////////////
+    // Parse IP Address. Assumes format is "000.000.000.000"
+    ip_bytes[0] = atoi( ipaddr );
+    ip_bytes[1] = atoi( ipaddr + 4 );
+    ip_bytes[2] = atoi( ipaddr + 8 );
+    ip_bytes[3] = atoi( ipaddr + 12 );
 
     //////////////////////////////////////////////////////////////
     // setup background
@@ -93,8 +98,8 @@ bool getIPFromUser( char* ipaddr ) {
     ip_cursor = SPR_addSprite( &ip_cursor_spr, pos_x, pos_y, TILE_ATTR(PAL1, FALSE, FALSE, FALSE ));
 
 
-    // TODO: parse numbers from string if non zero
-
+    //////////////////////////////////////////////////////////////
+    // setup temporary values 
     char temp_server[16];
     char textPart1[4];
     memset( textPart1, 0, sizeof(textPart1));
@@ -105,13 +110,17 @@ bool getIPFromUser( char* ipaddr ) {
     char textPart4[4];
     memset( textPart4, 0, sizeof(textPart4));
 
-    JOY_setEventHandler( &inputCallback );
 
+
+    //////////////////////////////////////////////////////////////
+    // setup controls
+    JOY_setEventHandler( &inputCallback );
     VDP_drawText( "Press A to save", 13, 16 );
     VDP_drawText( "Press B to cancel", 12, 18 );
 
+    //////////////////////////////////////////////////////////////
+    // Loop until done
     while(!done) {
-        //updateAddressString( temp_server, p1, p2, p3, p4 );
         uintToStr(ip_bytes[0], textPart1, 3 );             
         uintToStr(ip_bytes[1], textPart2, 3 );             
         uintToStr(ip_bytes[2], textPart3, 3 );             
@@ -122,7 +131,7 @@ bool getIPFromUser( char* ipaddr ) {
         VDP_drawText( textPart4, 25, 11 );
         if( doSave == true ) {
             sprintf(ipaddr,"%s.%s.%s.%s", textPart1, textPart2, textPart3, textPart4 );
-            return;
+            break;
         }
         SPR_setPosition( ip_cursor, pos_x, pos_y );
         SPR_update();    
@@ -130,7 +139,12 @@ bool getIPFromUser( char* ipaddr ) {
         SYS_doVBlankProcess();
 
     }
-
+    SPR_setVisibility( ip_cursor, HIDDEN );
+    SPR_releaseSprite( ip_cursor );
+    SPR_update();    
+    VDP_clearTextLine( 11 );
+    VDP_clearTextLine( 16 );
+    VDP_clearTextLine( 18 );
 
 
 }
