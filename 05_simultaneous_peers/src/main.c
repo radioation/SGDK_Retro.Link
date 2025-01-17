@@ -3,8 +3,22 @@
 
 int cursor_x, cursor_y;
 u8 buttons, buttons_prev;
-u8 mode = 0; // 0 - not set, 1 - Host, 2 - Client
 
+
+// **Identification**
+// need to have an ID for each console that is unique
+#define IM_NOBODY 0
+#define IM_HOST 1
+#define IM_CLIENT 2
+u8 whoAmI = IM_NOBODY; 
+
+
+// network stuff
+char server[16] = "000.000.000.000"; 
+unsigned int local_current_frame;
+unsigned int server_current_frame;
+uint8 local_history[32];
+uint8 remote_history[32];
 
 void sync_host() {
     //
@@ -43,13 +57,13 @@ void host_game() {
 }
 
 void join_game() {
-    mode = 2;
+    whoAmI = IM_CLIENT;
     cursor_y = 5;
     NET_connect(cursor_x, cursor_y, "010.086.022.036:5364"); cursor_x=0; cursor_y++;
 }
 
 
-void set_game_mode() {
+void setWhoAmI() {
     VDP_clearTextArea( 0, 0,  40, 13  );
     VDP_drawText("          (A) - Host Game", 0, 5);
     VDP_drawText("          (C) - Join Game", 0, 7);
@@ -62,7 +76,7 @@ void set_game_mode() {
         if(buttons & BUTTON_A && buttons_prev == 0x00) { 
             VDP_clearTextArea( 0, 5,  40, 3 );
             cursor_y = 5;
-            mode = 1;
+            whoAmI = IM_HOST; 
             // start listening 
             host_game();
 
@@ -98,8 +112,17 @@ int main()
     cursor_x = 0;
     cursor_y = 1;
 
+
     ///////////////////////////////////////////////////////////
-    // test retro.link 
+    // Clear Buffers
+    local_current_frame = 0; // local frame counter
+    server_current_frame = 0; // frame counter received from server
+
+    memset( local_history, 0, sizeof( local_history ));
+    memset( remote_history, 0, sizeof( remote_history ));
+
+    ///////////////////////////////////////////////////////////
+    // Establish Comms (find/talk to other console)
     VDP_drawText("Detecting adapter...[  ]", cursor_x, cursor_y); cursor_x+=21; 
     NET_initialize(); // Detect cartridge and set boolean variable
 
@@ -129,7 +152,50 @@ int main()
     waitMs(2000);
 
 
-    set_game_mode();
+    // get server address from SRAM or user.
+    SRAM_enable();
+    u8 part = SRAM_readByte(0);
+    char textPart[4];
+    sprintf( server, "%03d.", part );
+    part = SRAM_readByte(1);
+    sprintf( server+4, "%03d.", part );
+    part = SRAM_readByte(2);
+    sprintf( server+8, "%03d.", part );
+    part = SRAM_readByte(3);
+    sprintf( server+12, "%03d", part );
+
+    SPR_init();
+
+    VDP_drawText( server, 13 , 3 );
+
+    getIPFromUser(server);
+
+    VDP_drawText( "Got Address", 13 ,12 );
+    VDP_drawText( server, 13 , 13 );
+    // TODO: add ping here and save if successful.
+    //  for now, saving always.
+    SRAM_writeByte(0, atoi( server ));
+    SRAM_writeByte(1, atoi( server + 4 ));
+    SRAM_writeByte(2, atoi( server + 8 ));
+    SRAM_writeByte(3, atoi( server + 12));
+
+ 
+
+    // console waits for players to select host or client role.
+    setWhoAmI(); 
+
+
+
+    ///////////////////////////////////////////////////////////
+    // Establish COmms
+    get_latench();
+
+
+    ///////////////////////////////////////////////////////////
+    // Synchronize 
+    
+
+
 
 
 
@@ -139,9 +205,9 @@ int main()
     while(1) // Loop forever 
     { 
         buttons = JOY_readJoypad(JOY_1);
-        if ( mode == 1 ) { 
+        if ( whoAmI == IM_HOST ) { 
             // HOST mode
-        } else if ( mode == 2 ) {
+        } else if ( whoAmI == IM_CLIENT ) {
             // Client mode
         }
 
