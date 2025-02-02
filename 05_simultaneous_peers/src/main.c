@@ -17,8 +17,120 @@ u8 whoAmI = IM_NOBODY;
 char server[16] = "000.000.000.000"; 
 unsigned int local_current_frame;
 unsigned int server_current_frame;
-uint8 local_history[32];
-uint8 remote_history[32];
+u8 local_history[32];
+u8 remote_history[32];
+
+u8 latency_checks = 8
+int vbl_counter = 0
+int frame_delay;
+
+
+void VBlankHandler()
+{
+    //
+    vbl_counter++;
+    
+}
+
+void latency_send() {
+    // number of time we are goint to sample latency?
+    int count = 0;
+    int curr_vbl_counter = 0; 
+    int prev_vbl_counter = 0; 
+    while( count < latency_checks ) {
+        // wait up
+        VDP_waitVBlank();
+
+        // ok to send?
+        while( ! NET_TXReady() );
+
+        // send latency token 
+        NET_sendByte('@');
+
+        // reset VBLANK counter
+        vbl_counter = 0; 
+
+        // get response
+        VDP_waitVBlank();
+        while( ! NET_RXReady() );
+        curr_vbl_counter = vbl_counter; // get current vblank count 
+        u8 ret = NET_readByte();
+        // is latency byte?
+        if( ret != '@' ) {
+            continue; // NOPE! start over
+        }
+
+        //
+        if( curr_vbl_counter > prev_vbl_counter ) {
+            prev_vbl_counter = curr_vbl_counter;
+        } else {
+            count+=1; // getting closer to the end.
+        }
+    }    
+    // done with it
+    delay = curr_vbl_count >> 1; 
+    if ( delay % 2 ) {
+        delay+=1; // make it even
+    }
+    frame_delay = delay;
+
+    //OK to send?
+    while( ! NET_TXReady() );
+    // send termination byte to other console.
+    NET_sendByte('@');
+    while( true ) { 
+        while( ! NET_RXReady() );
+        if( ret == 'K' ) break;  // is latency byte?
+    }
+
+    // send frame delay 
+    NET_sendByte(&frame_delay);
+    NET_sendByte(&frame_delay+1);
+
+}
+
+
+void latency_recv() {
+    while(1) {
+        // wait for byte
+        while( ! NET_RXReady() );
+        u8 ret = NET_readByte();
+
+        // check for latency loop termination token.
+        if( ret == '%' ) {
+            // we done brah
+            break;
+        }
+
+        // OK to send?
+        while( ! NET_TXReady() );
+        // echo it back
+        NET_sendByte(ret);
+        // loop back
+    }
+    
+    while( ! NET_TXReady() );
+    NET_sendByte('K');
+    // get first byte
+    u8 byte1 = NET_readByte(); // Retrieve byte from RX hardware Fifo directly
+
+    // get seonc frint 
+    u8 byte2 = NET_readByte(); // Retrieve byte from RX hardware Fifo directly
+    receive_latency = byte1<<8 + byte2;
+
+}
+
+void get_latency() {
+    // whoami?
+    if( whoAmI == IM_HOST) {
+        latency_send();
+    } else if( whoAmI == IM_CLIENT) {
+        // client recieves first
+        latency_recv();
+    }
+}
+
+
 
 void sync_host() {
     //
@@ -56,10 +168,10 @@ void host_game() {
 
 }
 
-void join_game() {
-    whoAmI = IM_CLIENT;
+bool join_game() {
     cursor_y = 5;
-    NET_connect(cursor_x, cursor_y, "010.086.022.036:5364"); cursor_x=0; cursor_y++;
+    // blocks whilewaiting for network to be ready.
+    return NET_connect(cursor_x, cursor_y, "010.086.022.036:5364"); cursor_x=0; cursor_y++;
 }
 
 
@@ -79,11 +191,13 @@ void setWhoAmI() {
             whoAmI = IM_HOST; 
             // start listening 
             host_game();
-
+            break;
         }else if(buttons & BUTTON_C && buttons_prev == 0x00) { 
             VDP_clearTextArea( 0, 5,  40, 3 );
             // try to connect to server.
+            whoAmI = IM_CLIENT;
             join_game();
+            break;
 
         }
     }
@@ -103,6 +217,11 @@ int main()
     VDP_setBackgroundColor(0);              // Set background black
     VDP_setTextPlane(BG_B);                 // Use PLANE B for text rendering
     VDP_setTextPalette(0);                  // Use palette 0 for text color
+
+
+    //SYS_setVIntCallback( VIntHandler );     // setup vertical interrupt
+    SYS_setVBlankCallback( VBlankHandler );     // setup vertical interrupt
+
     SYS_enableInts();                       // Enable interrupts (allows our callback routine to print data)
 
     PAL_fadeOutPalette(PAL0,1,FALSE);
@@ -179,21 +298,21 @@ int main()
     SRAM_writeByte(2, atoi( server + 8 ));
     SRAM_writeByte(3, atoi( server + 12));
 
- 
 
     // console waits for players to select host or client role.
     setWhoAmI(); 
 
 
-
     ///////////////////////////////////////////////////////////
-    // Establish COmms
-    get_latench();
+    // Establish Comms
+    get_latency();
 
 
     ///////////////////////////////////////////////////////////
     // Synchronize 
-    
+    synchronize();
+
+
 
 
 

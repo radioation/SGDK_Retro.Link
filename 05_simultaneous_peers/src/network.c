@@ -193,7 +193,7 @@ void NET_resetAdapter(void)
 // Connect                                                      **
 //****************************************************************
 // Make an outbound TCP connection to supplied DNS/IP
-void NET_connect(int x, int y, char *str)
+bool NET_connect(int x, int y, char *str)
 {
     NET_sendByte('C');
     NET_sendMessage(str);
@@ -205,11 +205,11 @@ void NET_connect(int x, int y, char *str)
     {
         case 'C': // Connected
             VDP_drawText("Connected:", x, y); VDP_drawText(str, x+11, y);
-            break;
+            return true;
         case 'N': // Host Unreachable
             VDP_drawText("Error: Host unreachable", x, y);
             NET_flushBuffers();
-            break;
+            return false;
     }
 }
 
