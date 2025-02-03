@@ -100,7 +100,7 @@ void getIPFromUser( char* ipaddr ) {
 
     //////////////////////////////////////////////////////////////
     // setup temporary values 
-    char temp_server[16];
+    //char temp_server[16];
     char textPart1[4];
     memset( textPart1, 0, sizeof(textPart1));
     char textPart2[4];

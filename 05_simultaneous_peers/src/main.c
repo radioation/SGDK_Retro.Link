@@ -20,16 +20,32 @@ unsigned int server_current_frame;
 u8 local_history[32];
 u8 remote_history[32];
 
-u8 latency_checks = 8
-int vbl_counter = 0
+u8 latency_checks = 8;
+int vbl_counter = 0;
 int frame_delay;
+
+
 
 
 void VBlankHandler()
 {
     //
     vbl_counter++;
-    
+
+}
+
+
+
+static inline void waitForVBlankEnd() {
+    __asm volatile (
+            "1:\n\t"
+            "move.w  0xC00004,%%d1\n\t"   // Read VDP status
+            "and.b   #0x08,%%d1\n\t"      // Mask VBlank bit
+            "bne.s   1b\n\t"              // If still in VBlank, loop
+            :
+            :
+            : "d1"  // Clobber list (marks D1 as modified)
+            );
 }
 
 void latency_send() {
@@ -39,7 +55,7 @@ void latency_send() {
     int prev_vbl_counter = 0; 
     while( count < latency_checks ) {
         // wait up
-        VDP_waitVBlank();
+        waitForVBlankEnd();
 
         // ok to send?
         while( ! NET_TXReady() );
@@ -51,7 +67,7 @@ void latency_send() {
         vbl_counter = 0; 
 
         // get response
-        VDP_waitVBlank();
+        waitForVBlankEnd();
         while( ! NET_RXReady() );
         curr_vbl_counter = vbl_counter; // get current vblank count 
         u8 ret = NET_readByte();
@@ -68,7 +84,7 @@ void latency_send() {
         }
     }    
     // done with it
-    delay = curr_vbl_count >> 1; 
+    int delay = curr_vbl_count >> 1; 
     if ( delay % 2 ) {
         delay+=1; // make it even
     }
@@ -80,6 +96,7 @@ void latency_send() {
     NET_sendByte('@');
     while( true ) { 
         while( ! NET_RXReady() );
+        u8 ret = NET_readByte();
         if( ret == 'K' ) break;  // is latency byte?
     }
 
@@ -108,14 +125,16 @@ void latency_recv() {
         NET_sendByte(ret);
         // loop back
     }
-    
+
     while( ! NET_TXReady() );
     NET_sendByte('K');
-    // get first byte
-    u8 byte1 = NET_readByte(); // Retrieve byte from RX hardware Fifo directly
 
-    // get seonc frint 
-    u8 byte2 = NET_readByte(); // Retrieve byte from RX hardware Fifo directly
+    // get first byte
+    while( ! NET_RXReady() );
+    u8 byte1 = NET_readByte(); 
+
+    // get second byte
+    u8 byte2 = NET_readByte(); 
     receive_latency = byte1<<8 + byte2;
 
 }
@@ -128,6 +147,46 @@ void get_latency() {
         // client recieves first
         latency_recv();
     }
+}
+
+
+void sync_host() {
+    while(1) {
+        // keep checking for data.
+        while( ! NET_RXReady() );
+
+        // get the byte
+        u8 byte = NET_readByte(); // Retrieve byte from RX hardware Fifo directly
+        if( byte == '*' ) break;
+    }
+
+
+    // TODO: // ensure non interlace video mode
+    waitForVBlankEnd(); 
+
+    u16 hv = GET_HVCOUNTER;
+    u16 v = hv >> 8;
+
+    // check if it's OK to send.
+    while( ! NET_RXReady() );
+    NET_sendByte(v);
+
+
+
+
+}
+
+void sync_client() {
+}
+
+void synchronize() {
+    if( whoAmI == IM_HOST) {
+        sync_host();
+    } else if( whoAmI == IM_CLIENT) {
+        // client recieves first
+        sync_client();
+    }
+
 }
 
 
