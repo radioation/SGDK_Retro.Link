@@ -1,6 +1,7 @@
 #ifndef _IP_INPUT_H_
 #define _IP_INPUT_H_
 
+int atoi(const char *str);
 
 /**
  *  \brief

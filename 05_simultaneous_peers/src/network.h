@@ -40,5 +40,5 @@ void NET_BlockConnections(void);
 void NET_resetAdapter(void);
 void NET_printIP(int x, int y);
 void NET_printMAC(int x, int y);
-void NET_connect(int x, int y, char *str);
-bool NET_pingIP(int x, int y, int ping_count, char *ip);
+bool NET_connect(int x, int y, char *str);
+void NET_pingIP(int x, int y, int ping_count, char *ip);

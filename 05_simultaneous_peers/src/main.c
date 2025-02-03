@@ -1,5 +1,6 @@
 #include <genesis.h>
 #include "network.h"
+#include "ip_input.h"
 
 int cursor_x, cursor_y;
 u8 buttons, buttons_prev;
@@ -23,6 +24,7 @@ u8 remote_history[32];
 u8 latency_checks = 8;
 int vbl_counter = 0;
 int frame_delay;
+u16 receive_latency;
 
 
 
@@ -84,7 +86,7 @@ void latency_send() {
         }
     }    
     // done with it
-    int delay = curr_vbl_count >> 1; 
+    int delay = curr_vbl_counter >> 1; 
     if ( delay % 2 ) {
         delay+=1; // make it even
     }
@@ -101,8 +103,8 @@ void latency_send() {
     }
 
     // send frame delay 
-    NET_sendByte(&frame_delay);
-    NET_sendByte(&frame_delay+1);
+    NET_sendByte( (unsigned char)(frame_delay & 0xFF) );
+    NET_sendByte( (unsigned char)((frame_delay >>8 ) & 0xFF) );
 
 }
 
@@ -135,7 +137,7 @@ void latency_recv() {
 
     // get second byte
     u8 byte2 = NET_readByte(); 
-    receive_latency = byte1<<8 + byte2;
+    receive_latency = (byte2 << 8 ) + byte1;
 
 }
 
@@ -190,13 +192,6 @@ void synchronize() {
 }
 
 
-
-void sync_host() {
-    //
-}
-
-void sync_client() {
-}
 
 
 void host_game() {
