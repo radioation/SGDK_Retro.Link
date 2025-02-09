@@ -6,6 +6,7 @@ int cursor_x, cursor_y;
 u8 buttons, buttons_prev;
 
 
+////////////////////////////////////////////////////////////////////////////
 // **Identification**
 // need to have an ID for each console that is unique
 #define IM_NOBODY 0
@@ -13,20 +14,62 @@ u8 buttons, buttons_prev;
 #define IM_CLIENT 2
 u8 whoAmI = IM_NOBODY; 
 
-
+////////////////////////////////////////////////////////////////////////////
 // network stuff
 char server[16] = "000.000.000.000"; 
 unsigned int local_current_frame;
 unsigned int server_current_frame;
-u8 local_history[32];
-u8 remote_history[32];
+#define HISTORY_BUFFER_SIZE 32
+u8 local_history[HISTORY_BUFFER_SIZE]; // circular buffer of local player inputs
+u8 remote_history[HISTORY_BUFFER_SIZE]; // circular bufer of remote player inputs
 
 u8 latency_checks = 8;
 int vbl_counter = 0;
 int frame_delay;
 u16 receive_latency;
 
+////////////////////////////////////////////////////////////////////////////
+// Gameplay
 
+#define TOP_EDGE 0
+#define RIGHT_EDGE 319
+#define LEFT_EDGE 0
+#define BOTTOM_EDGE 223
+
+#define MAX_SHOTS 2
+
+
+// the players
+struct CP_SPRITE {
+    Sprite *sprite;
+
+    s16 pos_x;
+    s16 pos_y;
+
+    s16 vel_x;
+    s16 vel_y;
+
+    s16 hitbox_x1;
+    s16 hitbox_y1;
+    s16 hitbox_x2;
+    s16 hitbox_y2;
+
+    bool active;
+};
+
+
+struct CP_SPRITE hostPlayer;
+struct CP_SPRITE hostShots[MAX_SHOTS];
+u16 hostDir = 0;
+struct CP_SPRITE clientPlayer;
+struct CP_SPRITE clientShots[MAX_SHOTS];
+u16 clientDir = 0;
+
+
+
+
+////////////////////////////////////////////////////////////////////////////
+// video functions.
 void VBlankHandler()
 {
     //
@@ -57,6 +100,8 @@ static inline void ensureInterlaceVideoMode() {
             );
 }
 
+////////////////////////////////////////////////////////////////////////////
+// network functions.
 void latency_send() {
     VDP_drawText("   Entered latency_send()", 0, 6);
     int count = 0;
@@ -359,13 +404,152 @@ void setWhoAmI() {
             VDP_clearTextArea( 0, 5,  40, 3 );
             // try to connect to server.
             whoAmI = IM_CLIENT;
-            bool joined = join_game(); 
+            join_game(); 
             break;
 
         }
         buttons_prev = buttons;
         SYS_doVBlankProcess();
     }
+}
+
+
+////////////////////////////////////////////////////////////////////////////
+// game?
+
+void gameJoyHandler( u16 joy, u16 changed, u16 state)
+{
+    if (joy == JOY_1)
+    {
+        if (changed & state & BUTTON_A) {
+            // fire code here
+            for( u8 i=0; i < MAX_SHOTS; ++i ) {
+                if( hostShots[i].active == false ) {
+                    // move it
+                    hostShots[i].pos_x = hostPlayer.pos_x + 4;
+                    hostShots[i].pos_y = hostPlayer.pos_y + 4;
+                    hostShots[i].active = true;
+                    if( hostDir & BUTTON_RIGHT ) {
+                        hostShots[i].vel_x = 4;
+                    }else if( hostDir & BUTTON_LEFT ) {
+                        hostShots[i].vel_x = -4;
+                    }
+                    if( hostDir & BUTTON_UP ) {
+                        hostShots[i].vel_y = -4;
+                    }else if( hostDir & BUTTON_DOWN ) {
+                        hostShots[i].vel_y = 4;
+                    }
+                    break;
+                }
+            }
+
+        }
+        u8 currDir = 0;
+        if (state & BUTTON_RIGHT)
+        {
+            hostPlayer.vel_x = 2;
+            currDir |= BUTTON_RIGHT;
+
+        }
+        else if (state & BUTTON_LEFT)
+        {
+            hostPlayer.vel_x = -2;
+            currDir |= BUTTON_LEFT;
+        } else{
+            if( (changed & BUTTON_RIGHT) | (changed & BUTTON_LEFT) ){
+                hostPlayer.vel_x = 0;
+            }
+        }
+
+        if (state & BUTTON_UP)
+        {
+            hostPlayer.vel_y = -2;
+            currDir |= BUTTON_UP;
+        }
+        else if (state & BUTTON_DOWN)
+        {
+            hostPlayer.vel_y = 2;
+            currDir |= BUTTON_DOWN;
+        } else{
+            if( (changed & BUTTON_UP) | (changed & BUTTON_DOWN) ){
+                hostPlayer.vel_y = 0;
+            }
+        }
+        if( currDir ) {
+            hostDir = currDir;
+        }
+    }
+}
+
+
+void update() {
+    //Position the players
+    hostPlayer.pos_x += hostPlayer.vel_x;
+    hostPlayer.pos_y += hostPlayer.vel_y;
+
+    for( u16 i=0; i < MAX_SHOTS; ++i ) {
+        if( hostShots[i].active == TRUE ) {
+            hostShots[i].pos_x +=  hostShots[i].vel_x;
+            hostShots[i].pos_y +=  hostShots[i].vel_y;
+            if(hostShots[i].pos_y  < 0 || hostShots[i].pos_y > 224
+                || hostShots[i].pos_x < 0 || hostShots[i].pos_x > 319) {
+                hostShots[i].pos_x = -16;
+                hostShots[i].pos_y = -10;
+                hostShots[i].vel_x = 0;
+                hostShots[i].vel_y = 0;
+                hostShots[i].active = FALSE;
+            }
+            SPR_setPosition(hostShots[i].sprite,hostShots[i].pos_x,hostShots[i].pos_y);
+        } else {
+            SPR_setPosition( hostShots[i].sprite, -32, -22 );
+        }
+    }
+
+
+
+    SPR_setPosition( hostPlayer.sprite, hostPlayer.pos_x, hostPlayer.pos_y );
+
+
+}
+
+void checkCollisions() {
+
+}
+
+
+void createShots() {
+    s16 xpos = -16;
+    s16 ypos = 230;
+
+    for( u16 i=0; i < MAX_SHOTS; ++i ) {
+        hostShots[i].pos_x = xpos;
+        hostShots[i].pos_y = ypos;
+        hostShots[i].vel_x = 0;
+        hostShots[i].vel_y = 0;
+        hostShots[i].active = FALSE;
+        hostShots[i].hitbox_x1 = 0;
+        hostShots[i].hitbox_y1 = 0;
+        hostShots[i].hitbox_x2 = 8;
+        hostShots[i].hitbox_y2 = 8;
+
+        hostShots[i].sprite = SPR_addSprite( &shot, xpos, ypos, TILE_ATTR( PAL0, 0, FALSE, FALSE ));
+        SPR_setAnim( hostShots[i].sprite, 0 );
+
+        clientShots[i].pos_x = xpos;
+        clientShots[i].pos_y = ypos;
+        clientShots[i].vel_x = 0;
+        clientShots[i].vel_y = 0;
+        clientShots[i].active = FALSE;
+        clientShots[i].hitbox_x1 = 0;
+        clientShots[i].hitbox_y1 = 0;
+        clientShots[i].hitbox_x2 = 8;
+        clientShots[i].hitbox_y2 = 8;
+
+        clientShots[i].sprite = SPR_addSprite( &shot, xpos, ypos, TILE_ATTR( PAL0, 0, FALSE, FALSE ));
+        SPR_setAnim( hostShots[i].sprite, 0 );
+
+    }
+
 }
 
 
@@ -439,7 +623,6 @@ int main()
     // get server address from SRAM or user.
     SRAM_enable();
     u8 part = SRAM_readByte(0);
-    char textPart[4];
     sprintf( server, "%03d.", part );
     part = SRAM_readByte(1);
     sprintf( server+4, "%03d.", part );
@@ -480,44 +663,71 @@ int main()
     // Synchronize 
     synchronize();
 
+    ///////////////////////////////////////////////////////////
+    // GAME ON
 
+    PAL_setPalette( PAL0, shot_pal.data, CPU);
+
+    // Sprite initializatoin
+    SPR_init();
+
+    // set intiial position for host
+    hostPlayer.pos_x = 10;
+    hostPlayer.pos_y = 10;
+    hostPlayer.vel_x = 0;
+    hostPlayer.vel_y = 0;
+    hostPlayer.active = TRUE;
+    hostPlayer.hitbox_x1 = 0;
+    hostPlayer.hitbox_y1 = 0;
+    hostPlayer.hitbox_x2 = 16;
+    hostPlayer.hitbox_y2 = 16;
+    hostPlayer.sprite  = SPR_addSprite( &player, hostPlayer.pos_x, hostPlayer.pos_y, TILE_ATTR( PAL0, 0, FALSE,FALSE ));
+    SPR_setAnim( hostPlayer.sprite, 0 );
+
+
+    // set intiial position for host
+    clientPlayer.pos_x = 303;
+    clientPlayer.pos_y = 198;
+    clientPlayer.vel_x = 0;
+    clientPlayer.vel_y = 0;
+    clientPlayer.active = TRUE;
+    clientPlayer.hitbox_x1 = 0;
+    clientPlayer.hitbox_y1 = 0;
+    clientPlayer.hitbox_x2 = 16;
+    clientPlayer.hitbox_y2 = 16;
+    clientPlayer.sprite  = SPR_addSprite( &player, clientPlayer.pos_x, clientPlayer.pos_y, TILE_ATTR( PAL0, 0, FALSE,FALSE ));
+    SPR_setAnim( clientPlayer.sprite, 1 );
+
+    createShots();
+
+    SPR_update();
+
+    JOY_setEventHandler( &gameJoyHandler );
+    if ( whoAmI == IM_HOST ) { 
+        VDP_drawText("HOST MODE", 15, 1 );
+        // HOST mode
+
+    } else if ( whoAmI == IM_CLIENT ) {
+        // Client mode
+        VDP_drawText("CLIENT MODE", 14, 1 );                  
+    }
     //------------------------------------------------------------------
     // MAIN LOOP
     //------------------------------------------------------------------
     while(1) // Loop forever 
     { 
-        buttons = JOY_readJoypad(JOY_1);
-        if ( whoAmI == IM_HOST ) { 
-            VDP_drawText("HOST MODE", 15, 1 );
-            // HOST mode
-            
-        } else if ( whoAmI == IM_CLIENT ) {
-            // Client mode
-            VDP_drawText("CLIENT MODE", 14, 1 );                  
-        }
 
-        /*
-           while(NET_RXReady()) // while data in hardware receive FIFO
-           {   
-           u8 byte = NET_readByte(); // Retrieve byte from RX hardware Fifo directly
-           switch(byte)
-           {
-           case 0x0A: // a line feed?
-           cursor_y++;
-           cursor_x=1;
-           break;              
-           case 0x0D: // a carridge Return?
-           cursor_x=1;
-           break; 
-           default:   // print
-           if (cursor_x >= 40) { cursor_x=0; cursor_y++; }
-           if (cursor_y >= 28) { cursor_x=0; cursor_y=0; }
-           sprintf(str, "%c", byte); // Convert
-           VDP_drawText(str, cursor_x, cursor_y); cursor_x++;
-           break;
-           }
-           }
-           */
+        // 1) update objects in game
+        update();
+
+        // 2) detect collisions
+        checkCollisions();
+
+
+        // 3) Update sprites
+        SPR_update();
+
+
         SYS_doVBlankProcess(); 
     }
 
