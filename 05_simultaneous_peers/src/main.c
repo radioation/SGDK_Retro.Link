@@ -58,12 +58,12 @@ struct CP_SPRITE {
 };
 
 
-struct CP_SPRITE hostPlayer;
-struct CP_SPRITE hostShots[MAX_SHOTS];
-u16 hostDir = 0;
-struct CP_SPRITE clientPlayer;
-struct CP_SPRITE clientShots[MAX_SHOTS];
-u16 clientDir = 0;
+struct CP_SPRITE localPlayer;
+struct CP_SPRITE localShots[MAX_SHOTS];
+u16 localJoyDir = 0;
+struct CP_SPRITE networkPlayer;
+struct CP_SPRITE networkShots[MAX_SHOTS];
+u16 networkDir = 0;
 
 
 
@@ -414,8 +414,68 @@ void setWhoAmI() {
 }
 
 
+void init_network_buffers() {
+    ///////////////////////////////////////////////////////////
+    // Clear History
+    local_current_frame = 0; // local frame counter
+    server_current_frame = 0; // frame counter received from server
+
+    memset( local_history, 0, sizeof( local_history ));
+    memset( remote_history, 0, sizeof( remote_history ));
+}
+
+
+void game_tick() {
+    // 1) update objects in game
+    update();
+
+    // 2) detect collisions
+    checkCollisions();
+
+
+    // 3) Update sprites
+    SPR_update();
+}
+
+void host_pre_tick() {
+    local_history[ server_current_frame + frame_delay ] =  localJoyDir;
+/*
+    //if (  NET_TXReady() ) {
+        // send new controler state to server
+    //}
+
+    // recv state from network.
+    if (  NET_RXReady() ) {
+        // read bytes from server.
+    
+        // server_current_frame = 
+    
+        // copy input buffer from message to input history starting at server_current_frame+1
+    
+        // copy game stae from message
+    
+        // copy immediate inputs form message
+        // tempRemoteJoyDir = (value in message)
+        // reote_history[server_current_frame] = 
+    
+        // if ( local_current_frame > server_current_frame ) {
+        //   network_frame_diff = local_current_frame - server_current_frame;
+        //   while( network_frame_diff != 0 ) {
+        //       //update contorller states
+        //     remoteJoyBuffer 
+    
+        remoteJoyDir = 0;
+        ++local_current_frame;
+    }
+*/
+}
+
+void client_pre_tick() {
+}
+
+
 ////////////////////////////////////////////////////////////////////////////
-// game?
+// game
 
 void gameJoyHandler( u16 joy, u16 changed, u16 state)
 {
@@ -424,20 +484,20 @@ void gameJoyHandler( u16 joy, u16 changed, u16 state)
         if (changed & state & BUTTON_A) {
             // fire code here
             for( u8 i=0; i < MAX_SHOTS; ++i ) {
-                if( hostShots[i].active == false ) {
+                if( localShots[i].active == false ) {
                     // move it
-                    hostShots[i].pos_x = hostPlayer.pos_x + 4;
-                    hostShots[i].pos_y = hostPlayer.pos_y + 4;
-                    hostShots[i].active = true;
-                    if( hostDir & BUTTON_RIGHT ) {
-                        hostShots[i].vel_x = 4;
-                    }else if( hostDir & BUTTON_LEFT ) {
-                        hostShots[i].vel_x = -4;
+                    localShots[i].pos_x = localPlayer.pos_x + 4;
+                    localShots[i].pos_y = localPlayer.pos_y + 4;
+                    localShots[i].active = true;
+                    if( localJoyDir & BUTTON_RIGHT ) {
+                        localShots[i].vel_x = 4;
+                    }else if( localJoyDir & BUTTON_LEFT ) {
+                        localShots[i].vel_x = -4;
                     }
-                    if( hostDir & BUTTON_UP ) {
-                        hostShots[i].vel_y = -4;
-                    }else if( hostDir & BUTTON_DOWN ) {
-                        hostShots[i].vel_y = 4;
+                    if( localJoyDir & BUTTON_UP ) {
+                        localShots[i].vel_y = -4;
+                    }else if( localJoyDir & BUTTON_DOWN ) {
+                        localShots[i].vel_y = 4;
                     }
                     break;
                 }
@@ -447,36 +507,36 @@ void gameJoyHandler( u16 joy, u16 changed, u16 state)
         u8 currDir = 0;
         if (state & BUTTON_RIGHT)
         {
-            hostPlayer.vel_x = 2;
+            localPlayer.vel_x = 2;
             currDir |= BUTTON_RIGHT;
 
         }
         else if (state & BUTTON_LEFT)
         {
-            hostPlayer.vel_x = -2;
+            localPlayer.vel_x = -2;
             currDir |= BUTTON_LEFT;
         } else{
             if( (changed & BUTTON_RIGHT) | (changed & BUTTON_LEFT) ){
-                hostPlayer.vel_x = 0;
+                localPlayer.vel_x = 0;
             }
         }
 
         if (state & BUTTON_UP)
         {
-            hostPlayer.vel_y = -2;
+            localPlayer.vel_y = -2;
             currDir |= BUTTON_UP;
         }
         else if (state & BUTTON_DOWN)
         {
-            hostPlayer.vel_y = 2;
+            localPlayer.vel_y = 2;
             currDir |= BUTTON_DOWN;
         } else{
             if( (changed & BUTTON_UP) | (changed & BUTTON_DOWN) ){
-                hostPlayer.vel_y = 0;
+                localPlayer.vel_y = 0;
             }
         }
         if( currDir ) {
-            hostDir = currDir;
+            localJoyDir = currDir;
         }
     }
 }
@@ -484,30 +544,30 @@ void gameJoyHandler( u16 joy, u16 changed, u16 state)
 
 void update() {
     //Position the players
-    hostPlayer.pos_x += hostPlayer.vel_x;
-    hostPlayer.pos_y += hostPlayer.vel_y;
+    localPlayer.pos_x += localPlayer.vel_x;
+    localPlayer.pos_y += localPlayer.vel_y;
 
     for( u16 i=0; i < MAX_SHOTS; ++i ) {
-        if( hostShots[i].active == TRUE ) {
-            hostShots[i].pos_x +=  hostShots[i].vel_x;
-            hostShots[i].pos_y +=  hostShots[i].vel_y;
-            if(hostShots[i].pos_y  < 0 || hostShots[i].pos_y > 224
-                || hostShots[i].pos_x < 0 || hostShots[i].pos_x > 319) {
-                hostShots[i].pos_x = -16;
-                hostShots[i].pos_y = -10;
-                hostShots[i].vel_x = 0;
-                hostShots[i].vel_y = 0;
-                hostShots[i].active = FALSE;
+        if( localShots[i].active == TRUE ) {
+            localShots[i].pos_x +=  localShots[i].vel_x;
+            localShots[i].pos_y +=  localShots[i].vel_y;
+            if(localShots[i].pos_y  < 0 || localShots[i].pos_y > 224
+                    || localShots[i].pos_x < 0 || localShots[i].pos_x > 319) {
+                localShots[i].pos_x = -16;
+                localShots[i].pos_y = -10;
+                localShots[i].vel_x = 0;
+                localShots[i].vel_y = 0;
+                localShots[i].active = FALSE;
             }
-            SPR_setPosition(hostShots[i].sprite,hostShots[i].pos_x,hostShots[i].pos_y);
+            SPR_setPosition(localShots[i].sprite,localShots[i].pos_x,localShots[i].pos_y);
         } else {
-            SPR_setPosition( hostShots[i].sprite, -32, -22 );
+            SPR_setPosition( localShots[i].sprite, -32, -22 );
         }
     }
 
 
 
-    SPR_setPosition( hostPlayer.sprite, hostPlayer.pos_x, hostPlayer.pos_y );
+    SPR_setPosition( localPlayer.sprite, localPlayer.pos_x, localPlayer.pos_y );
 
 
 }
@@ -522,31 +582,31 @@ void createShots() {
     s16 ypos = 230;
 
     for( u16 i=0; i < MAX_SHOTS; ++i ) {
-        hostShots[i].pos_x = xpos;
-        hostShots[i].pos_y = ypos;
-        hostShots[i].vel_x = 0;
-        hostShots[i].vel_y = 0;
-        hostShots[i].active = FALSE;
-        hostShots[i].hitbox_x1 = 0;
-        hostShots[i].hitbox_y1 = 0;
-        hostShots[i].hitbox_x2 = 8;
-        hostShots[i].hitbox_y2 = 8;
+        localShots[i].pos_x = xpos;
+        localShots[i].pos_y = ypos;
+        localShots[i].vel_x = 0;
+        localShots[i].vel_y = 0;
+        localShots[i].active = FALSE;
+        localShots[i].hitbox_x1 = 0;
+        localShots[i].hitbox_y1 = 0;
+        localShots[i].hitbox_x2 = 8;
+        localShots[i].hitbox_y2 = 8;
 
-        hostShots[i].sprite = SPR_addSprite( &shot, xpos, ypos, TILE_ATTR( PAL0, 0, FALSE, FALSE ));
-        SPR_setAnim( hostShots[i].sprite, 0 );
+        localShots[i].sprite = SPR_addSprite( &shot, xpos, ypos, TILE_ATTR( PAL0, 0, FALSE, FALSE ));
+        SPR_setAnim( localShots[i].sprite, 0 );
 
-        clientShots[i].pos_x = xpos;
-        clientShots[i].pos_y = ypos;
-        clientShots[i].vel_x = 0;
-        clientShots[i].vel_y = 0;
-        clientShots[i].active = FALSE;
-        clientShots[i].hitbox_x1 = 0;
-        clientShots[i].hitbox_y1 = 0;
-        clientShots[i].hitbox_x2 = 8;
-        clientShots[i].hitbox_y2 = 8;
+        networkShots[i].pos_x = xpos;
+        networkShots[i].pos_y = ypos;
+        networkShots[i].vel_x = 0;
+        networkShots[i].vel_y = 0;
+        networkShots[i].active = FALSE;
+        networkShots[i].hitbox_x1 = 0;
+        networkShots[i].hitbox_y1 = 0;
+        networkShots[i].hitbox_x2 = 8;
+        networkShots[i].hitbox_y2 = 8;
 
-        clientShots[i].sprite = SPR_addSprite( &shot, xpos, ypos, TILE_ATTR( PAL0, 0, FALSE, FALSE ));
-        SPR_setAnim( hostShots[i].sprite, 0 );
+        networkShots[i].sprite = SPR_addSprite( &shot, xpos, ypos, TILE_ATTR( PAL0, 0, FALSE, FALSE ));
+        SPR_setAnim( localShots[i].sprite, 0 );
 
     }
 
@@ -581,13 +641,6 @@ int main()
     cursor_y = 1;
 
 
-    ///////////////////////////////////////////////////////////
-    // Clear Buffers
-    local_current_frame = 0; // local frame counter
-    server_current_frame = 0; // frame counter received from server
-
-    memset( local_history, 0, sizeof( local_history ));
-    memset( remote_history, 0, sizeof( remote_history ));
 
     ///////////////////////////////////////////////////////////
     // Establish Comms (find/talk to other console)
@@ -672,31 +725,31 @@ int main()
     SPR_init();
 
     // set intiial position for host
-    hostPlayer.pos_x = 10;
-    hostPlayer.pos_y = 10;
-    hostPlayer.vel_x = 0;
-    hostPlayer.vel_y = 0;
-    hostPlayer.active = TRUE;
-    hostPlayer.hitbox_x1 = 0;
-    hostPlayer.hitbox_y1 = 0;
-    hostPlayer.hitbox_x2 = 16;
-    hostPlayer.hitbox_y2 = 16;
-    hostPlayer.sprite  = SPR_addSprite( &player, hostPlayer.pos_x, hostPlayer.pos_y, TILE_ATTR( PAL0, 0, FALSE,FALSE ));
-    SPR_setAnim( hostPlayer.sprite, 0 );
+    localPlayer.pos_x = 10;
+    localPlayer.pos_y = 10;
+    localPlayer.vel_x = 0;
+    localPlayer.vel_y = 0;
+    localPlayer.active = TRUE;
+    localPlayer.hitbox_x1 = 0;
+    localPlayer.hitbox_y1 = 0;
+    localPlayer.hitbox_x2 = 16;
+    localPlayer.hitbox_y2 = 16;
+    localPlayer.sprite  = SPR_addSprite( &player, localPlayer.pos_x, localPlayer.pos_y, TILE_ATTR( PAL0, 0, FALSE,FALSE ));
+    SPR_setAnim( localPlayer.sprite, 0 );
 
 
     // set intiial position for host
-    clientPlayer.pos_x = 303;
-    clientPlayer.pos_y = 198;
-    clientPlayer.vel_x = 0;
-    clientPlayer.vel_y = 0;
-    clientPlayer.active = TRUE;
-    clientPlayer.hitbox_x1 = 0;
-    clientPlayer.hitbox_y1 = 0;
-    clientPlayer.hitbox_x2 = 16;
-    clientPlayer.hitbox_y2 = 16;
-    clientPlayer.sprite  = SPR_addSprite( &player, clientPlayer.pos_x, clientPlayer.pos_y, TILE_ATTR( PAL0, 0, FALSE,FALSE ));
-    SPR_setAnim( clientPlayer.sprite, 1 );
+    networkPlayer.pos_x = 303;
+    networkPlayer.pos_y = 198;
+    networkPlayer.vel_x = 0;
+    networkPlayer.vel_y = 0;
+    networkPlayer.active = TRUE;
+    networkPlayer.hitbox_x1 = 0;
+    networkPlayer.hitbox_y1 = 0;
+    networkPlayer.hitbox_x2 = 16;
+    networkPlayer.hitbox_y2 = 16;
+    networkPlayer.sprite  = SPR_addSprite( &player, networkPlayer.pos_x, networkPlayer.pos_y, TILE_ATTR( PAL0, 0, FALSE,FALSE ));
+    SPR_setAnim( networkPlayer.sprite, 1 );
 
     createShots();
 
@@ -714,18 +767,15 @@ int main()
     //------------------------------------------------------------------
     // MAIN LOOP
     //------------------------------------------------------------------
+    init_network_buffers(); 
+
     while(1) // Loop forever 
     { 
 
-        // 1) update objects in game
-        update();
-
-        // 2) detect collisions
-        checkCollisions();
+        pre_tick(); // execute before every game tick
 
 
-        // 3) Update sprites
-        SPR_update();
+        game_tick(); // always called 
 
 
         SYS_doVBlankProcess(); 
