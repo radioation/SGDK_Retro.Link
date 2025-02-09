@@ -211,6 +211,7 @@ bool NET_connect(int x, int y, char *str)
             NET_flushBuffers();
             return false;
     }
+    return false;
 }
 
 //****************************************************************
