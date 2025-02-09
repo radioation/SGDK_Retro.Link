@@ -38,6 +38,10 @@ Sprite * ip_cursor;
 bool doSave = false;
 bool done = false;
 
+void doNothingCallback( u16 joy, u16 changed, u16 state ) {
+}
+
+
 void inputCallback( u16 joy, u16 changed, u16 state ) {
     if(  changed & state & BUTTON_LEFT ) {
         if( curr_octet == 0 ) {
@@ -145,6 +149,7 @@ void getIPFromUser( char* ipaddr ) {
     VDP_clearTextLine( 11 );
     VDP_clearTextLine( 16 );
     VDP_clearTextLine( 18 );
+    JOY_setEventHandler( &doNothingCallback );
 
 
 }

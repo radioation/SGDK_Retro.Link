@@ -27,16 +27,12 @@ int frame_delay;
 u16 receive_latency;
 
 
-
-
 void VBlankHandler()
 {
     //
     vbl_counter++;
 
 }
-
-
 
 static inline void waitForVBlankEnd() {
     __asm volatile (
@@ -49,18 +45,31 @@ static inline void waitForVBlankEnd() {
             : "d1"  // Clobber list (marks D1 as modified)
             );
 }
+static inline void ensureNonInterlaceVideoMode() {
+    __asm volatile (
+            "move.w  #0x8c81,0xC00004\n\t"
+            );
+}
+
+static inline void ensureInterlaceVideoMode() {
+    __asm volatile (
+            "move.w  #0x8c83,0xC00004\n\t"
+            );
+}
 
 void latency_send() {
-    // number of time we are goint to sample latency?
+    VDP_drawText("   Entered latency_send()", 0, 6);
     int count = 0;
     int curr_vbl_counter = 0; 
     int prev_vbl_counter = 0; 
+
+    // number of time we are goint to sample latency
     while( count < latency_checks ) {
-        // wait up
+        // Wait until we aren't in VBLANK.
         waitForVBlankEnd();
 
         // ok to send?
-        while( ! NET_TXReady() );
+        while( ! NET_TXReady() ); // keep waiting.
 
         // send latency token 
         NET_sendByte('@');
@@ -68,9 +77,9 @@ void latency_send() {
         // reset VBLANK counter
         vbl_counter = 0; 
 
-        // get response
         waitForVBlankEnd();
-        while( ! NET_RXReady() );
+        // get response
+        while( ! NET_RXReady() ); // is data availableR?
         curr_vbl_counter = vbl_counter; // get current vblank count 
         u8 ret = NET_readByte();
         // is latency byte?
@@ -78,42 +87,51 @@ void latency_send() {
             continue; // NOPE! start over
         }
 
-        //
+        // is current local VBLANK larger than previous
         if( curr_vbl_counter > prev_vbl_counter ) {
             prev_vbl_counter = curr_vbl_counter;
         } else {
-            count+=1; // getting closer to the end.
+            count+=1; // change latency chekc counter. 
         }
     }    
-    // done with it
-    int delay = curr_vbl_counter >> 1; 
-    if ( delay % 2 ) {
+    VDP_drawText("    Middle latency_send()", 0, 6);
+    // done with it. INspect result
+    int delay = curr_vbl_counter >> 1;  // divide by 2
+    if ( delay % 2 ) { // check even.
         delay+=1; // make it even
     }
-    frame_delay = delay;
+    frame_delay = delay; // store frame delay locally
+
+    char message[40];
+    memset(message,0, sizeof(message));
+    sprintf( message, "  frame_delay: %d", frame_delay );
+    VDP_drawText(message, 0, 7 );
 
     //OK to send?
     while( ! NET_TXReady() );
     // send termination byte to other console.
-    NET_sendByte('@');
+    VDP_drawText("    Send term latency_send()", 0, 6);
+    NET_sendByte('%');
     while( true ) { 
         while( ! NET_RXReady() );
         u8 ret = NET_readByte();
-        if( ret == 'K' ) break;  // is latency byte?
+        if( ret == 'K' ) break;  // ACK Byte? 
     }
 
+    VDP_drawText("    Send d latency_send()", 0, 6);
     // send frame delay 
-    NET_sendByte( (unsigned char)(frame_delay & 0xFF) );
-    NET_sendByte( (unsigned char)((frame_delay >>8 ) & 0xFF) );
+    NET_sendByte( (unsigned char)(frame_delay & 0xFF) ); // send frame delay byte 
+    NET_sendByte( (unsigned char)((frame_delay >>8 ) & 0xFF) ); // send frame delay byte 
 
 }
 
 
 void latency_recv() {
+    VDP_drawText("   Entered latency_recv()", 0, 6);
     while(1) {
         // wait for byte
-        while( ! NET_RXReady() );
-        u8 ret = NET_readByte();
+        while( ! NET_RXReady() ); // wait until available.
+        u8 ret = NET_readByte(); // get byte
 
         // check for latency loop termination token.
         if( ret == '%' ) {
@@ -125,19 +143,28 @@ void latency_recv() {
         while( ! NET_TXReady() );
         // echo it back
         NET_sendByte(ret);
-        // loop back
+        // loop around again.
     }
 
+    VDP_drawText("    middle latency_recv()", 0, 6);
+
     while( ! NET_TXReady() );
+    VDP_drawText("    send K latency_recv()", 0, 6);
     NET_sendByte('K');
 
     // get first byte
     while( ! NET_RXReady() );
+    VDP_drawText("     GET 1 latency_recv()", 0, 6);
     u8 byte1 = NET_readByte(); 
 
     // get second byte
     u8 byte2 = NET_readByte(); 
+    VDP_drawText("     GET 2 latency_recv()", 0, 6);
     receive_latency = (byte2 << 8 ) + byte1;
+    char message[40];
+    memset(message,0, sizeof(message));
+    sprintf( message, "  recv_latency: %d", receive_latency );
+    VDP_drawText(message, 0, 7 );
 
 }
 
@@ -153,32 +180,109 @@ void get_latency() {
 
 
 void sync_host() {
+    VDP_drawText("   Entered sync_host()", 0, 8);
     while(1) {
-        // keep checking for data.
-        while( ! NET_RXReady() );
+        // Data available?
+        while( ! NET_RXReady() ); // If not keep checking for data.
 
         // get the byte
-        u8 byte = NET_readByte(); // Retrieve byte from RX hardware Fifo directly
-        if( byte == '*' ) break;
+        u8 byte = NET_readByte(); 
+        if( byte == '*' ) break;  // is it the OK byte from client?
     }
+    VDP_drawText("       mid sync_host()", 0, 8);
 
+    ensureNonInterlaceVideoMode();
 
-    // TODO: // ensure non interlace video mode
-    waitForVBlankEnd(); 
+    while(1) { 
+        waitForVBlankEnd();  // wait until we aren't in vblank
 
-    u16 hv = GET_HVCOUNTER;
-    u16 v = hv >> 8;
+        // get HVCounter value
+        u16 hv = GET_HVCOUNTER; // get HVCOUNTER VALUE
+        u8  v = hv >> 8; // shift it to point to V-Counter
 
-    // check if it's OK to send.
-    while( ! NET_RXReady() );
-    NET_sendByte(v);
+        while( ! NET_TXReady() ); // check if it's OK to send.
+        NET_sendByte(v); // send vcount value
 
-
-
+        // Data available?
+        while( ! NET_RXReady() ); 
+        u8 byte = NET_readByte(); // Get Byte
+        if( byte == '$' ) break;  // did we receive synced token? if so, we're done
+    }
+    VDP_drawText("      done sync_host()", 0, 8);
+    NET_flushBuffers();
 
 }
 
 void sync_client() {
+    VDP_drawText("   Entered sync_client()", 0, 8);
+    // Define the addresses for the VDP registers
+    volatile u16 * const vdpStatus  = (volatile u16 *)0xC00004;
+    volatile u16 * const vdpVCounter = (volatile u16 *)0xC00008;
+    s16  scanline = 0;
+    s16 READ_VCOUNT = 93; // READ_VCOUNT         EQU $5D       ; VCOUNT CONSIDERED NORMAL READ TIME
+
+    // Ok to send data?
+    while( ! NET_TXReady() );
+    NET_sendByte('*'); // send vcount value
+
+    vbl_counter = 0; // clear VBLANK counter
+    while( vbl_counter != 0 ) {} // client delay.  not equal keep checking?
+
+    VDP_drawText("       mid sync_client()", 0, 8);
+    ensureNonInterlaceVideoMode(); // ensure non interlace video mode.
+
+
+    while(1) {  // client vblank sync:
+
+        // is data available in sega UART
+        while( ! NET_RXReady() );
+        u8 remoteVCount = NET_readByte(); // read remote vcount value
+
+        u16 status = *vdpStatus; // get VDP status
+        if( status & 0x08 ) {  //In VBlank?
+            scanline = 0;   // we are in VBLANK so zero it.
+        } else {
+            // NOPE, so get VCOunter 
+            scanline = *vdpVCounter;
+            // bigger than max scanline
+            if( scanline > READ_VCOUNT ) {
+                scanline = READ_VCOUNT;
+            }
+        }
+        // OK! 
+        s16 diff = scanline - remoteVCount;
+        if( diff < 0 ) {
+            // negative, invert value
+            diff = -diff;    
+        }
+        // postivie here
+        if( diff <1 ) {
+            break; // less than one apart, we are synced
+        }
+
+        // send another vcount request
+        // is it OK to send?
+        while( ! NET_TXReady() );
+        NET_sendByte('%'); // send out byte to get another vcount 
+        ensureInterlaceVideoMode(); // SLOW DOWN
+        // try again in loop
+    }
+
+    // host vblank sycned, get back to normal speed
+    ensureNonInterlaceVideoMode();
+
+    // latency value FRAME_DELAY set by other functions
+    // OK to send?
+    while( ! NET_TXReady() );
+    NET_sendByte('$'); // send sync done token
+
+
+    vbl_counter = 0; // clear VBLANK counter
+    while( vbl_counter != frame_delay ) {} // client delay.  not equal keep checking?
+
+    VDP_drawText("      EXIT sync_client()", 0, 8);
+    NET_flushBuffers();
+
 }
 
 void synchronize() {
@@ -197,7 +301,7 @@ void synchronize() {
 void host_game() {
     // Allow client to join 
     NET_allowConnections();
-    VDP_drawText("           Waiting       ", 0, 5);
+    VDP_drawText("   Wait for client:      ", 0, 5);
 
     // loop while waiting for a peer.
     u8 offset = 0;
@@ -215,7 +319,7 @@ void host_game() {
         u8 ret = NET_readByte();
         if( ret == 'C' ) {
             // clear text before losing out
-            VDP_drawText("          Connected!     ", 0, 5);
+            VDP_drawText("   Client Connected!     ", 0, 5);
             return;
         }
     }
@@ -223,19 +327,24 @@ void host_game() {
 }
 
 bool join_game() {
+    VDP_drawText("   Connect to server    ", 0, 5);
     cursor_y = 5;
     // blocks whilewaiting for network to be ready.
-    return NET_connect(cursor_x, cursor_y, "010.086.022.036:5364"); cursor_x=0; cursor_y++;
+    char fullserver[21];
+    memset(fullserver,0, sizeof(fullserver));
+    sprintf( fullserver, "%s:5364", server);
+    return NET_connect(cursor_x, cursor_y, fullserver); cursor_x=0; cursor_y++;
 }
 
 
 void setWhoAmI() {
+    buttons = 0; 
+    buttons_prev = 0;
     VDP_clearTextArea( 0, 0,  40, 13  );
     VDP_drawText("          (A) - Host Game", 0, 5);
     VDP_drawText("          (C) - Join Game", 0, 7);
     NET_resetAdapter();
-    bool done = false;
-    while(!done) // Loop for a while
+    while(1) // loop forever
     { 
         buttons = JOY_readJoypad(JOY_1);
         // MODE NOT SET, button press will determine server or client.
@@ -250,10 +359,12 @@ void setWhoAmI() {
             VDP_clearTextArea( 0, 5,  40, 3 );
             // try to connect to server.
             whoAmI = IM_CLIENT;
-            join_game();
+            bool joined = join_game(); 
             break;
 
         }
+        buttons_prev = buttons;
+        SYS_doVBlankProcess();
     }
 }
 
@@ -342,6 +453,10 @@ int main()
     VDP_drawText( server, 13 , 3 );
 
     getIPFromUser(server);
+    SYS_doVBlankProcess();
+    // clear out last input and wait a sec.
+    waitMs(1000);
+    JOY_update();
 
     VDP_drawText( "Got Address", 13 ,12 );
     VDP_drawText( server, 13 , 13 );
@@ -361,15 +476,9 @@ int main()
     // Establish Comms
     get_latency();
 
-
     ///////////////////////////////////////////////////////////
     // Synchronize 
     synchronize();
-
-
-
-
-
 
 
     //------------------------------------------------------------------
@@ -379,9 +488,12 @@ int main()
     { 
         buttons = JOY_readJoypad(JOY_1);
         if ( whoAmI == IM_HOST ) { 
+            VDP_drawText("HOST MODE", 15, 1 );
             // HOST mode
+            
         } else if ( whoAmI == IM_CLIENT ) {
             // Client mode
+            VDP_drawText("CLIENT MODE", 14, 1 );                  
         }
 
         /*
@@ -405,7 +517,7 @@ int main()
            break;
            }
            }
-         */
+           */
         SYS_doVBlankProcess(); 
     }
 
