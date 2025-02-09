@@ -1,4 +1,5 @@
 #include <genesis.h>
+#include "resources.h"
 #include "network.h"
 #include "ip_input.h"
 
