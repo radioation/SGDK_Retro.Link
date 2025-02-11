@@ -428,67 +428,50 @@ void init_network_buffers() {
 }
 
 
-void game_tick() {
-    // 1) update objects in game
-    update();
-
-    // 2) detect collisions
-    checkCollisions();
-
-
-    // 3) Update sprites
-    SPR_update();
-}
-
-void pre_tick() {
-    local_history[ server_current_frame + frame_delay ] =  hostJoyDir;
-/*
-    //if (  NET_TXReady() ) {
-        // send new controler state to server
-    //}
-
-    // recv state from network.
-    if (  NET_RXReady() ) {
-        // read bytes from server.
-    
-        // server_current_frame = 
-    
-        // copy input buffer from message to input history starting at server_current_frame+1
-    
-        // copy game stae from message
-    
-        // copy immediate inputs form message
-        // tempRemoteJoyDir = (value in message)
-        // reote_history[server_current_frame] = 
-    
-        // if ( local_current_frame > server_current_frame ) {
-        //   network_frame_diff = local_current_frame - server_current_frame;
-        //   while( network_frame_diff != 0 ) {
-        //       //update contorller states
-        //     remoteJoyBuffer 
-    
-        remoteJoyDir = 0;
-        ++local_current_frame;
-    }
-*/
-}
-
-void client_pre_tick() {
-}
-
 
 ////////////////////////////////////////////////////////////////////////////
 // game
 
-/*
-void gameJoyHandler( u16 joy, u16 changed, u16 state)
-{
-    **JOYPADS should just be read into the circular buffers.**
-    **actual logic should go to game_tick()/update()**
 
-    if (joy == JOY_1)
+
+void update() {
+    u16 currDir = 0;
+    u16 joyState = host_history[ host_current_frame ];
+    if (joyState & BUTTON_RIGHT)
     {
-        if (changed & state & BUTTON_A) {
+        hostPlayer.vel_x = 2;
+        currDir |= BUTTON_RIGHT;
+    }
+    else if (joyState & BUTTON_LEFT)
+    {
+        hostPlayer.vel_x = -2;
+        currDir |= BUTTON_LEFT;
+    } else {
+        hostPlayer.vel_x = 0;
+    }
+
+    if (joyState & BUTTON_UP)
+    {
+        hostPlayer.vel_y = -2;
+        currDir |= BUTTON_UP;
+    }
+    else if (joyState & BUTTON_DOWN)
+    {
+        hostPlayer.vel_y = 2;
+        currDir |= BUTTON_DOWN;
+    } else {
+        hostPlayer.vel_y = 0;
+    }
+    if( currDir ) {
+        hostJoyDir = currDir;
+    }
+    if (joyState & BUTTON_A) {
+        s16 prevFrame = host_current_frame - 1;
+        if( prevFrame < 0 ) {
+            prevFrame = HISTORY_BUFFER_SIZE - 1;
+        }
+        u16 prevJoyState = host_history[ prevFrame ];
+        if( ( prevJoyState & BUTTON_A) == 0 ) {
             // fire code here
             for( u8 i=0; i < MAX_SHOTS; ++i ) {
                 if( hostShots[i].active == false ) {
@@ -509,48 +492,8 @@ void gameJoyHandler( u16 joy, u16 changed, u16 state)
                     break;
                 }
             }
-
-        }
-        u8 currDir = 0;
-        if (state & BUTTON_RIGHT)
-        {
-            hostPlayer.vel_x = 2;
-            currDir |= BUTTON_RIGHT;
-
-        }
-        else if (state & BUTTON_LEFT)
-        {
-            hostPlayer.vel_x = -2;
-            currDir |= BUTTON_LEFT;
-        } else{
-            if( (changed & BUTTON_RIGHT) | (changed & BUTTON_LEFT) ){
-                hostPlayer.vel_x = 0;
-            }
-        }
-
-        if (state & BUTTON_UP)
-        {
-            hostPlayer.vel_y = -2;
-            currDir |= BUTTON_UP;
-        }
-        else if (state & BUTTON_DOWN)
-        {
-            hostPlayer.vel_y = 2;
-            currDir |= BUTTON_DOWN;
-        } else{
-            if( (changed & BUTTON_UP) | (changed & BUTTON_DOWN) ){
-                hostPlayer.vel_y = 0;
-            }
-        }
-        if( currDir ) {
-            hostJoyDir = currDir;
         }
     }
-}
-*/
-
-
-void update() {
     //Position the players
     hostPlayer.pos_x += hostPlayer.vel_x;
     hostPlayer.pos_y += hostPlayer.vel_y;
@@ -574,9 +517,92 @@ void update() {
     }
 
 
+    currDir = 0;
+    joyState = client_history[ client_current_frame ];
+    if (joyState & BUTTON_RIGHT)
+    {
+        clientPlayer.vel_x = 2;
+        currDir |= BUTTON_RIGHT;
+    }
+    else if (joyState & BUTTON_LEFT)
+    {
+        clientPlayer.vel_x = -2;
+        currDir |= BUTTON_LEFT;
+    } else {
+        clientPlayer.vel_x = 0;
+    }
+
+    if (joyState & BUTTON_UP)
+    {
+        clientPlayer.vel_y = -2;
+        currDir |= BUTTON_UP;
+    }
+    else if (joyState & BUTTON_DOWN)
+    {
+        clientPlayer.vel_y = 2;
+        currDir |= BUTTON_DOWN;
+    } else {
+        clientPlayer.vel_y = 0;
+    }
+    if( currDir ) {
+        clientJoyDir = currDir;
+    }
+
+    if (joyState & BUTTON_A) {
+        s16 prevFrame = client_current_frame - 1;
+        if( prevFrame < 0 ) {
+            prevFrame = HISTORY_BUFFER_SIZE - 1;
+        }
+        u16 prevJoyState = client_history[ prevFrame ];
+        if( ( prevJoyState & BUTTON_A) == 0 ) {
+            // fire code here
+            for( u8 i=0; i < MAX_SHOTS; ++i ) {
+                if( clientShots[i].active == false ) {
+                    // move it
+                    clientShots[i].pos_x = clientPlayer.pos_x + 4;
+                    clientShots[i].pos_y = clientPlayer.pos_y + 4;
+                    clientShots[i].active = true;
+                    if( clientJoyDir & BUTTON_RIGHT ) {
+                        clientShots[i].vel_x = 4;
+                    }else if( clientJoyDir & BUTTON_LEFT ) {
+                        clientShots[i].vel_x = -4;
+                    }
+                    if( clientJoyDir & BUTTON_UP ) {
+                        clientShots[i].vel_y = -4;
+                    }else if( clientJoyDir & BUTTON_DOWN ) {
+                        clientShots[i].vel_y = 4;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    clientPlayer.pos_x += clientPlayer.vel_x;
+    clientPlayer.pos_y += clientPlayer.vel_y;
+
+
+    for( u16 i=0; i < MAX_SHOTS; ++i ) {
+        if( clientShots[i].active == TRUE ) {
+            clientShots[i].pos_x +=  clientShots[i].vel_x;
+            clientShots[i].pos_y +=  clientShots[i].vel_y;
+            if(clientShots[i].pos_y  < 0 || clientShots[i].pos_y > 224
+                    || clientShots[i].pos_x < 0 || clientShots[i].pos_x > 319) {
+                clientShots[i].pos_x = -16;
+                clientShots[i].pos_y = -10;
+                clientShots[i].vel_x = 0;
+                clientShots[i].vel_y = 0;
+                clientShots[i].active = FALSE;
+            }
+            SPR_setPosition(clientShots[i].sprite,clientShots[i].pos_x,clientShots[i].pos_y);
+        } else {
+            SPR_setPosition( clientShots[i].sprite, -32, -22 );
+        }
+    }
+
+
 
     SPR_setPosition( hostPlayer.sprite, hostPlayer.pos_x, hostPlayer.pos_y );
-
+    SPR_setPosition( clientPlayer.sprite, clientPlayer.pos_x, clientPlayer.pos_y );
 
 }
 
@@ -588,7 +614,6 @@ void checkCollisions() {
 void createShots() {
     s16 xpos = -16;
     s16 ypos = 230;
-
     for( u16 i=0; i < MAX_SHOTS; ++i ) {
         hostShots[i].pos_x = xpos;
         hostShots[i].pos_y = ypos;
@@ -614,7 +639,7 @@ void createShots() {
         clientShots[i].hitbox_y2 = 8;
 
         clientShots[i].sprite = SPR_addSprite( &shot, xpos, ypos, TILE_ATTR( PAL0, 0, FALSE, FALSE ));
-        SPR_setAnim( hostShots[i].sprite, 0 );
+        SPR_setAnim( clientShots[i].sprite, 0 );
 
     }
 
