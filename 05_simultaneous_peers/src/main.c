@@ -18,11 +18,20 @@ u8 whoAmI = IM_NOBODY;
 ////////////////////////////////////////////////////////////////////////////
 // network stuff
 char server[16] = "000.000.000.000"; 
-unsigned int local_current_frame;
-unsigned int server_current_frame;
+
 #define HISTORY_BUFFER_SIZE 32
-u8 local_history[HISTORY_BUFFER_SIZE]; // circular buffer of local player inputs
-u8 remote_history[HISTORY_BUFFER_SIZE]; // circular bufer of remote player inputs
+unsigned int host_current_frame; 
+unsigned int client_current_frame;  
+
+u16 host_history[HISTORY_BUFFER_SIZE];   
+u16 client_history[HISTORY_BUFFER_SIZE];  
+
+void net_buffer_init() {
+    client_current_frame = 0;
+    host_current_frame = 0;
+    memset( host_history, 0, sizeof( host_history ) );
+    memset( client_history, 0, sizeof( client_history ) );
+}
 
 u8 latency_checks = 8;
 int vbl_counter = 0;
@@ -313,7 +322,7 @@ void sync_client() {
         while( ! NET_TXReady() );
         NET_sendByte('%'); // send out byte to get another vcount 
         ensureInterlaceVideoMode(); // SLOW DOWN
-        // try again in loop
+                                    // try again in loop
     }
 
     // host vblank sycned, get back to normal speed
@@ -417,15 +426,6 @@ void setWhoAmI() {
 }
 
 
-void init_network_buffers() {
-    ///////////////////////////////////////////////////////////
-    // Clear History
-    local_current_frame = 0; // local frame counter
-    server_current_frame = 0; // frame counter received from server
-
-    memset( local_history, 0, sizeof( local_history ));
-    memset( remote_history, 0, sizeof( remote_history ));
-}
 
 
 
@@ -645,12 +645,94 @@ void createShots() {
 
 }
 
+void game_tick() {
+    // 1) update objects in game
+    update();
+
+    // 2) detect collisions
+    checkCollisions();
+
+    // 3) Update sprites
+    SPR_update();
+}
+
+void pre_tick() {
+    // read joystick
+    u16 joyState = JOY_readJoypad(JOY_1);
+    if ( whoAmI == IM_HOST ) { 
+        // HOST mode
+        u16 pos = (host_current_frame + frame_delay) & 0b11111;
+        host_history[ pos ] = joyState;
+    } else if ( whoAmI == IM_CLIENT ) {
+        u16 pos = (client_current_frame + frame_delay) & 0b11111;
+        client_history[ pos ] = joyState;
+    }
+
+    if (  NET_TXReady() ) {
+        // send what we just stuck in the buffer
+        NET_sendByte( (unsigned char)(joyState & 0xFF) ); 
+        NET_sendByte( (unsigned char)((joyState >>8 ) & 0xFF) ); 
+
+        // send current frame
+        if ( whoAmI == IM_HOST ) { 
+            NET_sendByte( (unsigned char)(host_current_frame & 0xFF) ); 
+            NET_sendByte( (unsigned char)((host_current_frame >>8 ) & 0xFF) ); 
+        } else  ( whoAmI == IM_CLIENT ) {
+            NET_sendByte( (unsigned char)(client_current_frame & 0xFF) ); 
+            NET_sendByte( (unsigned char)((client_current_frame >>8 ) & 0xFF) ); 
+        }
+    }
+    // recv state from network.
+    if (  NET_RXReady() ) {
+        // read bytes from server.
+        u8 byte1 = NET_readByte();
+        u8 byte2 = NET_readByte();
+        // copy game state from message
+        u16 joyState = byte1 + (byte2<<8 );
+        byte1 = NET_readByte();
+        byte2 = NET_readByte();
+        if ( whoAmI == IM_HOST ) { 
+            client_current_frame = byte1 + (byte2<<8 );
+            u16 pos = (client_current_frame + frame_delay) & 0b11111;
+            client_history[ pos ] = joyState;
+        } else if ( whoAmI == IM_CLIENT ) {
+            host_current_frame = byte1 + (byte2<<8 );
+            u16 pos = (host_current_frame + frame_delay) & 0b11111;
+            host_history[ pos ] = joyState;
+        }
+
+        // play catch up if needed.
+        if ( host_current_frame > server_current_frame ) {
+            s16 network_frame_diff = host_current_frame - server_current_frame;
+            while( network_frame_diff != 0 ) {
+                //update controller state
+                remoteJoyBuffer
+                    update();
+            }
+        }
+
+        // TODO: slow the system down 
+    }
 
 
+    if ( whoAmI == IM_HOST ) { 
+        // circle on back
+        ++host_current_frame;
+        if( host_current_frame >= HISTORY_BUFFER_SIZE ) {
+            host_current_frame = 0;
+        }
+    } else  ( whoAmI == IM_CLIENT ) {
+        ++client_current_frame;
+        if( client_current_frame >= HISTORY_BUFFER_SIZE ) {
+            client_current_frame = 0;
+        }
+    }
+}
 
 
 int main()
 {
+
     ///////////////////////////////////////////////////////////
     // basic setup
     SYS_disableInts();                      // Disable interrupts
@@ -800,7 +882,7 @@ int main()
     //------------------------------------------------------------------
     // MAIN LOOP
     //------------------------------------------------------------------
-    init_network_buffers(); 
+    net_buffer_init();
 
     while(1) // Loop forever 
     { 
