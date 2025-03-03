@@ -14,4 +14,3 @@ networking code could use that bit to indicate the start
 of a data message.
 
 
-

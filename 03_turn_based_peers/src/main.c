@@ -81,10 +81,6 @@ void draw_pieces(){
 
 
 void move_piece( int startCol, int startRow, int endCol, int endRow ){
-    char message[40];
-    strclr(message);
-    sprintf( message, "X: %d y: %d sx: %d sy %d    ", startCol, startRow, endCol, endRow );
-    VDP_drawText(message, 0, 27);
     board[endCol][endRow] = board[startCol][startRow];
     board[startCol][startRow] = (CHESS_PIECE){EMPTY, NO_PLAYER}; 
     draw_pieces();
@@ -186,16 +182,9 @@ void cursor_clear_selected( CURSOR* cursor ) {
     char message[40];
     strclr(message);
     sprintf( message, "X: %d y: %d sx: %d sy %d    ", cursor->col, cursor->row, cursor->sel_col, cursor->sel_row);
-    VDP_drawText(message, 0, 0);
-    VDP_drawText("CLEARED", 0, 1);
 }
 
 bool cursor_action( CURSOR* cursor, CHESS_PIECE brd[8][8], u8 player ) {
-    char message[40];
-    strclr(message);
-    sprintf( message, "X: %d y: %d sx: %d sy %d    ", cursor->col, cursor->row, cursor->sel_col, cursor->sel_row);
-    VDP_drawText(message, 0, 0);
-
     if( cursor->sel_col < 0 ) {
         // no piece selected yet, check if player owns the current piece.
         if( brd[(u8)cursor->col][(u8)cursor->row].player == player ) { 
